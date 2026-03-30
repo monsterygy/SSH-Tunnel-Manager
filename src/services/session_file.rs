@@ -62,16 +62,14 @@ impl SessionFileStore {
 
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().is_some_and(|e| e == "json") {
-                if let Ok(data) = fs::read_to_string(&path) {
-                    if let Ok(record) = serde_json::from_str::<SessionRecord>(&data) {
-                        if is_process_alive(record.pid) {
-                            records.push(record);
-                        } else {
-                            // Stale file — process is gone, clean up
-                            let _ = fs::remove_file(&path);
-                        }
-                    }
+            if path.extension().is_some_and(|e| e == "json")
+                && let Ok(data) = fs::read_to_string(&path)
+                && let Ok(record) = serde_json::from_str::<SessionRecord>(&data)
+            {
+                if is_process_alive(record.pid) {
+                    records.push(record);
+                } else {
+                    let _ = fs::remove_file(&path);
                 }
             }
         }

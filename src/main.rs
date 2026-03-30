@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
                 host,
                 port,
                 username,
-                password,
+                password: _,
                 key,
             }) => {
                 let config = services::config_service::ConfigService::new()?;
@@ -95,8 +95,6 @@ async fn main() -> anyhow::Result<()> {
                         private_key_path: std::path::PathBuf::from(key_path),
                         passphrase_required: false,
                     }
-                } else if password {
-                    models::AuthMethod::Password
                 } else {
                     models::AuthMethod::Password
                 };
