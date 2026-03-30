@@ -61,8 +61,12 @@ impl SessionData {
         self.last_activity = Instant::now();
     }
 
-    /// Sync traffic statistics from all tunnel handles
-    fn sync_traffic_from_tunnels(&mut self) {
+    /// Sync traffic statistics from all tunnel handles.
+    /// Returns true if traffic has changed since the last sync (session is actively transferring).
+    fn sync_traffic_from_tunnels(&mut self) -> bool {
+        let prev_sent = self.bytes_sent;
+        let prev_received = self.bytes_received;
+
         self.bytes_sent = 0;
         self.bytes_received = 0;
 
@@ -71,6 +75,8 @@ impl SessionData {
             self.bytes_sent += sent;
             self.bytes_received += received;
         }
+
+        self.bytes_sent != prev_sent || self.bytes_received != prev_received
     }
 
     async fn shutdown(&mut self) {
@@ -124,9 +130,12 @@ impl SessionManager {
                 let mut sessions_guard = sessions.write().await;
                 let now = Instant::now();
 
-                // Sync traffic statistics from all tunnel handles
+                // Sync traffic statistics from all tunnel handles;
+                // if traffic changed, the session is still active
                 for (_session_id, data) in sessions_guard.iter_mut() {
-                    data.sync_traffic_from_tunnels();
+                    if data.sync_traffic_from_tunnels() {
+                        data.update_activity();
+                    }
                 }
 
                 // Find idle sessions

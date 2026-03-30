@@ -7,7 +7,7 @@ use russh::{Channel, ChannelMsg, Disconnect};
 use russh::keys::{PrivateKey, PrivateKeyWithHashAlg, PublicKey};
 use std::path::Path;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::RwLock;
 
 /// SSH client session handle
@@ -16,6 +16,50 @@ pub type SshSession = Handle<SshClientHandler>;
 /// Shared remote forwards configuration (used across session and tunnels)
 #[allow(dead_code)]
 pub type SharedRemoteForwards = Arc<RwLock<Vec<RemoteForwarding>>>;
+
+/// Create a `DuplexStream` that bridges a russh `Channel<Msg>` for use
+/// with `client::connect_stream`. A background task handles bidirectional
+/// copying between the channel and one end of the duplex; the other end
+/// is returned to the caller.
+fn channel_to_stream(mut channel: Channel<Msg>) -> tokio::io::DuplexStream {
+    let (caller_side, mut bridge_side) = tokio::io::duplex(64 * 1024);
+
+    tokio::spawn(async move {
+        let mut buf = vec![0u8; 8192];
+        loop {
+            tokio::select! {
+                // bridge_side read → channel write
+                result = bridge_side.read(&mut buf) => {
+                    match result {
+                        Ok(0) | Err(_) => {
+                            let _ = channel.eof().await;
+                            break;
+                        }
+                        Ok(n) => {
+                            if channel.data(&buf[..n]).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+                // channel read → bridge_side write
+                msg = channel.wait() => {
+                    match msg {
+                        Some(ChannelMsg::Data { ref data }) => {
+                            if bridge_side.write_all(data).await.is_err() {
+                                break;
+                            }
+                        }
+                        Some(ChannelMsg::Eof | ChannelMsg::Close) | None => break,
+                        Some(_) => {}
+                    }
+                }
+            }
+        }
+    });
+
+    caller_side
+}
 
 /// SSH service for managing connections
 pub struct SshService;
@@ -103,10 +147,11 @@ impl SshService {
             username
         );
 
-        // Load private key
-        let key_data = tokio::fs::read_to_string(key_path)
+        // Load private key (expand ~ in path)
+        let expanded_key_path = crate::utils::path::expand_tilde(key_path);
+        let key_data = tokio::fs::read_to_string(&expanded_key_path)
             .await
-            .map_err(|_| SshToolError::KeyFileNotFound(key_path.display().to_string()))?;
+            .map_err(|_| SshToolError::KeyFileNotFound(expanded_key_path.display().to_string()))?;
 
         // In russh 0.55.0, use ssh_key::PrivateKey::from_openssh
         let key = if let Some(pass) = passphrase {
@@ -172,11 +217,118 @@ impl SshService {
         Ok(session)
     }
 
+    /// Authenticate an SSH session over an arbitrary async stream.
+    async fn connect_over_stream<S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
+        stream: S,
+        username: &str,
+        auth_method: &AuthMethod,
+        password: Option<&str>,
+        host_key_fingerprint: Option<String>,
+        verify_host_key: bool,
+        remote_forwards: Vec<RemoteForwarding>,
+    ) -> Result<SshSession> {
+        let config = client::Config {
+            inactivity_timeout: Some(std::time::Duration::from_secs(300)),
+            ..<client::Config as Default>::default()
+        };
+
+        let handler = if verify_host_key {
+            SshClientHandler::with_verification(host_key_fingerprint)
+        } else {
+            SshClientHandler::new()
+        };
+
+        for forward in &remote_forwards {
+            handler.add_remote_forward(forward.clone()).await;
+        }
+
+        let mut session = client::connect_stream(Arc::new(config), stream, handler)
+            .await
+            .map_err(|e| SshToolError::SshConnectionFailed(e.to_string()))?;
+
+        match auth_method {
+            AuthMethod::Password => {
+                let pw = password.ok_or_else(|| {
+                    SshToolError::AuthenticationFailed("Password required".to_string())
+                })?;
+                let auth_res = session
+                    .authenticate_password(username, pw)
+                    .await
+                    .map_err(|e| SshToolError::AuthenticationFailed(e.to_string()))?;
+                if !matches!(auth_res, AuthResult::Success) {
+                    return Err(SshToolError::AuthenticationFailed(
+                        "Password authentication failed".to_string(),
+                    ));
+                }
+            }
+            AuthMethod::PublicKey {
+                private_key_path,
+                passphrase_required,
+            } => {
+                let expanded = crate::utils::path::expand_tilde(private_key_path);
+                let key_data = tokio::fs::read_to_string(&expanded)
+                    .await
+                    .map_err(|_| SshToolError::KeyFileNotFound(expanded.display().to_string()))?;
+
+                let key = if *passphrase_required {
+                    if let Some(pass) = password {
+                        PrivateKey::from_openssh(key_data.trim())
+                            .map_err(|e| {
+                                SshToolError::AuthenticationFailed(format!(
+                                    "Failed to load key: {}",
+                                    e
+                                ))
+                            })?
+                            .decrypt(pass.as_bytes())
+                            .map_err(|e| {
+                                SshToolError::AuthenticationFailed(format!(
+                                    "Failed to decrypt key: {}",
+                                    e
+                                ))
+                            })?
+                    } else {
+                        return Err(SshToolError::AuthenticationFailed(
+                            "Passphrase required but not provided".to_string(),
+                        ));
+                    }
+                } else {
+                    PrivateKey::from_openssh(key_data.trim()).map_err(|e| {
+                        SshToolError::AuthenticationFailed(format!("Failed to load key: {}", e))
+                    })?
+                };
+
+                let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(key), None);
+
+                let auth_res = session
+                    .authenticate_publickey(username, key_with_alg)
+                    .await
+                    .map_err(|e| SshToolError::AuthenticationFailed(e.to_string()))?;
+                if !matches!(auth_res, AuthResult::Success) {
+                    return Err(SshToolError::AuthenticationFailed(
+                        "Public key authentication failed".to_string(),
+                    ));
+                }
+            }
+        }
+
+        Ok(session)
+    }
+
     /// Connect using configuration
     pub async fn connect(
         connection: &SshConnection,
         password_provider: Option<&str>,
     ) -> Result<SshSession> {
+        // If jump hosts are configured, route through them
+        if !connection.jump_hosts.is_empty() {
+            return Self::connect_via_jump_hosts(
+                &connection.jump_hosts,
+                connection,
+                password_provider,
+            )
+            .await;
+        }
+
         // Extract remote forwarding configurations from the connection
         use crate::models::ForwardingConfig;
         let remote_forwards: Vec<RemoteForwarding> = connection
@@ -233,42 +385,39 @@ impl SshService {
         }
     }
 
-    /// Connect via jump hosts (ProxyJump)
-    #[allow(dead_code)]
-    pub async fn connect_via_jump_hosts(
+    /// Connect via jump hosts (ProxyJump) using SSH-over-SSH tunneling.
+    ///
+    /// Chains through each jump host by opening a direct-tcpip channel on the
+    /// current session, wrapping it as a stream, and establishing a new SSH
+    /// session on top. Each jump host uses its own credentials (`JumpHost.password`).
+    /// The final destination uses `password_provider` passed from the CLI.
+    async fn connect_via_jump_hosts(
         jump_hosts: &[JumpHost],
         destination: &SshConnection,
-        password_provider: &dyn Fn(&str) -> Option<String>,
+        password_provider: Option<&str>,
     ) -> Result<SshSession> {
-        if jump_hosts.is_empty() {
-            let password = password_provider(&destination.username);
-            return Self::connect(destination, password.as_deref()).await;
-        }
-
         tracing::info!("Connecting via {} jump host(s)", jump_hosts.len());
 
-        // For simplicity, we'll connect to the first jump host, then to the destination
-        // A full implementation would chain multiple jump hosts
-        let jump = &jump_hosts[0];
-        let jump_password = password_provider(&jump.username);
+        // Connect to the first jump host directly
+        let first_jump = &jump_hosts[0];
+        let first_password = first_jump.password.as_deref();
 
-        let jump_session = match &jump.auth_method {
+        let mut current_session = match &first_jump.auth_method {
             AuthMethod::Password => {
-                let password = jump_password.ok_or_else(|| {
+                let pw = first_password.ok_or_else(|| {
                     SshToolError::AuthenticationFailed(format!(
-                        "Password required for jump host {}",
-                        jump.host
+                        "Password required for jump host {} (set it in the jump host config)",
+                        first_jump.host
                     ))
                 })?;
-
                 Self::connect_password(
-                    &jump.host,
-                    jump.port,
-                    &jump.username,
-                    &password,
-                    jump.host_key_fingerprint.clone(),
-                    jump.verify_host_key,
-                    Vec::new(), // Jump hosts typically don't have remote forwards
+                    &first_jump.host,
+                    first_jump.port,
+                    &first_jump.username,
+                    pw,
+                    first_jump.host_key_fingerprint.clone(),
+                    first_jump.verify_host_key,
+                    Vec::new(),
                 )
                 .await?
             }
@@ -277,43 +426,101 @@ impl SshService {
                 passphrase_required,
             } => {
                 let passphrase = if *passphrase_required {
-                    jump_password.as_deref()
+                    first_password
                 } else {
                     None
                 };
-
                 Self::connect_pubkey(
-                    &jump.host,
-                    jump.port,
-                    &jump.username,
+                    &first_jump.host,
+                    first_jump.port,
+                    &first_jump.username,
                     private_key_path,
                     passphrase,
-                    jump.host_key_fingerprint.clone(),
-                    jump.verify_host_key,
-                    Vec::new(), // Jump hosts typically don't have remote forwards
+                    first_jump.host_key_fingerprint.clone(),
+                    first_jump.verify_host_key,
+                    Vec::new(),
                 )
                 .await?
             }
         };
 
-        tracing::info!("Connected to jump host, now connecting to destination");
+        tracing::info!("Connected to jump host 1: {}", first_jump.host);
 
-        // Create a direct TCP connection through the jump host
-        let _channel = jump_session
-            .channel_open_direct_tcpip(&destination.host, destination.port as u32, "localhost", 0)
+        // Chain through remaining jump hosts, each using its own password
+        for (i, jump) in jump_hosts.iter().enumerate().skip(1) {
+            let channel = current_session
+                .channel_open_direct_tcpip(&jump.host, jump.port as u32, "localhost", 0)
+                .await
+                .map_err(|e| {
+                    SshToolError::SshConnectionFailed(format!(
+                        "Failed to open tunnel to jump host {}: {}",
+                        jump.host, e
+                    ))
+                })?;
+
+            let stream = channel_to_stream(channel);
+            current_session = Self::connect_over_stream(
+                stream,
+                &jump.username,
+                &jump.auth_method,
+                jump.password.as_deref(),
+                jump.host_key_fingerprint.clone(),
+                jump.verify_host_key,
+                Vec::new(),
+            )
+            .await?;
+
+            tracing::info!("Connected to jump host {}: {}", i + 1, jump.host);
+        }
+
+        // Finally, open a channel to the destination through the last jump host
+        let channel = current_session
+            .channel_open_direct_tcpip(
+                &destination.host,
+                destination.port as u32,
+                "localhost",
+                0,
+            )
             .await
             .map_err(|e| {
-                SshToolError::SshConnectionFailed(format!("Jump host tunnel failed: {}", e))
+                SshToolError::SshConnectionFailed(format!(
+                    "Failed to open tunnel to destination {}:{}: {}",
+                    destination.host, destination.port, e
+                ))
             })?;
 
-        // Now we would need to create an SSH session over this channel
-        // This is a simplified implementation - full implementation would require
-        // custom transport layer
-        tracing::warn!("Multi-hop SSH connections are simplified in this implementation");
+        tracing::info!(
+            "Opened tunnel to destination {}:{}",
+            destination.host,
+            destination.port
+        );
 
-        // For now, just return the destination connection directly
-        let dest_password = password_provider(&destination.username);
-        Self::connect(destination, dest_password.as_deref()).await
+        // Extract remote forwarding configurations for the destination
+        use crate::models::ForwardingConfig;
+        let remote_forwards: Vec<RemoteForwarding> = destination
+            .forwarding_configs
+            .iter()
+            .filter_map(|config| {
+                if let ForwardingConfig::Remote(remote) = config {
+                    Some(remote.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Destination uses the CLI-provided password, not jump host passwords
+        let stream = channel_to_stream(channel);
+        Self::connect_over_stream(
+            stream,
+            &destination.username,
+            &destination.auth_method,
+            password_provider,
+            destination.host_key_fingerprint.clone(),
+            destination.verify_host_key,
+            remote_forwards,
+        )
+        .await
     }
 
     /// Execute a command on the remote server
@@ -469,15 +676,14 @@ impl client::Handler for SshClientHandler {
                     Err(russh::Error::UnknownKey)
                 }
             } else {
-                // First connection - log the fingerprint for user to verify
-                tracing::warn!("First connection to this host");
-                tracing::warn!("Server key fingerprint: {}", fingerprint);
-                tracing::warn!("Please verify this fingerprint matches the server's key");
-                tracing::warn!("Add it to your connection config to enable verification");
-
-                // For now, accept on first connection
-                // TODO: Prompt user to accept/reject
-                Ok(true)
+                tracing::error!(
+                    "Host key verification is enabled but no expected fingerprint is configured"
+                );
+                tracing::error!("Server key fingerprint: {}", fingerprint);
+                tracing::error!(
+                    "Add this fingerprint to your connection config to allow this connection"
+                );
+                Err(russh::Error::UnknownKey)
             }
         }
     }

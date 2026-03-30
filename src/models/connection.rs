@@ -75,6 +75,9 @@ pub struct JumpHost {
     pub username: String,
     #[serde(default)]
     pub auth_method: AuthMethod,
+    /// Password or key passphrase for this jump host (runtime only, never persisted).
+    #[serde(skip)]
+    pub password: Option<String>,
     #[serde(default)]
     pub host_key_fingerprint: Option<String>,
     #[serde(default = "default_verify_host_key")]
@@ -167,6 +170,7 @@ impl JumpHost {
             port: default_ssh_port(),
             username: username.into(),
             auth_method: AuthMethod::default(),
+            password: None,
             host_key_fingerprint: None,
             verify_host_key: default_verify_host_key(),
         }

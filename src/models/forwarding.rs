@@ -62,6 +62,15 @@ pub enum SocksVersion {
     Socks5,
 }
 
+impl std::fmt::Display for SocksVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SocksVersion::Socks4 => write!(f, "SOCKS4"),
+            SocksVersion::Socks5 => write!(f, "SOCKS5"),
+        }
+    }
+}
+
 fn default_bind_address() -> String {
     "127.0.0.1".to_string()
 }
@@ -139,8 +148,8 @@ impl ForwardingConfig {
             }
             Self::Dynamic(fwd) => {
                 format!(
-                    "{}:{} (SOCKS{:?})",
-                    fwd.bind_address, fwd.local_port, fwd.socks_version as u8
+                    "{}:{} ({})",
+                    fwd.bind_address, fwd.local_port, fwd.socks_version
                 )
             }
         }
@@ -174,8 +183,7 @@ mod tests {
         assert_eq!(local.description(), "127.0.0.1:13306 → 10.0.0.5:3306");
 
         let dynamic = ForwardingConfig::dynamic(2025);
-        assert!(dynamic.description().contains("2025"));
-        assert!(dynamic.description().contains("SOCKS"));
+        assert_eq!(dynamic.description(), "127.0.0.1:2025 (SOCKS5)");
     }
 
     #[test]

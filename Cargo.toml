@@ -26,7 +26,7 @@ indicatif = "0.17"
 russh = "0.56"
 
 # Async runtime
-tokio = { version = "1.49", features = ["rt-multi-thread", "macros", "sync", "time", "net", "fs"] }
+tokio = { version = "1.49", features = ["rt-multi-thread", "macros", "sync", "time", "net", "fs", "signal"] }
 futures = "0.3"
 async-trait = "0.1"
 
@@ -43,6 +43,7 @@ thiserror = "2.0"
 rust-i18n = "3"
 
 # Utilities
+libc = "0.2"
 uuid = { version = "1.19", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 directories = "6.0"

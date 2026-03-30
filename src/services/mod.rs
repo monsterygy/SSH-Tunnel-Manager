@@ -4,6 +4,7 @@ pub mod config_service;
 // pub mod key_service;
 pub mod log_service;
 pub mod port_validator;
+pub mod session_file;
 pub mod session_manager;
 pub mod ssh_service;
 pub mod tunnel_service;
