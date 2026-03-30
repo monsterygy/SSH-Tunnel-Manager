@@ -86,7 +86,10 @@ fn test_list_active_cleans_up_after_kill() {
     assert!(active.is_empty());
 
     // The file should have been removed by list_active
-    let session_file = dir.path().join("sessions").join(format!("{session_id}.json"));
+    let session_file = dir
+        .path()
+        .join("sessions")
+        .join(format!("{session_id}.json"));
     assert!(!session_file.exists());
 }
 

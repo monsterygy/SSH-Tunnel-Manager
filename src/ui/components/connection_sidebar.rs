@@ -59,12 +59,12 @@ pub fn render_connection_sidebar(
     };
 
     // Get active sessions to show connection status
-    let active_connection_ids: Vec<uuid::Uuid> =
-        if let Ok(sessions) = app_state.sessions.try_read() {
-            sessions.iter().map(|s| s.connection_id).collect()
-        } else {
-            vec![]
-        };
+    let active_connection_ids: Vec<uuid::Uuid> = if let Ok(sessions) = app_state.sessions.try_read()
+    {
+        sessions.iter().map(|s| s.connection_id).collect()
+    } else {
+        vec![]
+    };
 
     // Get confirm delete state
     let confirm_delete_id = if let Ok(ui_state) = app_state.ui_state.try_read() {
@@ -343,15 +343,12 @@ fn render_connection_list_item(
         })
         .when(!is_selected, |this| this.border_1().border_color(border))
         .cursor_pointer()
-        .on_mouse_down(
-            gpui::MouseButton::Left,
-            move |_event, _window, _app| {
-                let app_state = app_state_select.clone();
-                tokio::spawn(async move {
-                    app_state.select_and_load_connection(conn_id).await;
-                });
-            },
-        )
+        .on_mouse_down(gpui::MouseButton::Left, move |_event, _window, _app| {
+            let app_state = app_state_select.clone();
+            tokio::spawn(async move {
+                app_state.select_and_load_connection(conn_id).await;
+            });
+        })
         .child(
             v_flex()
                 .gap_1()
@@ -374,17 +371,13 @@ fn render_connection_list_item(
                                 .whitespace_nowrap()
                                 .child(conn.name.clone()),
                         )
-                        .child(
-                            div()
-                                .flex_shrink_0()
-                                .size(px(8.0))
-                                .rounded_full()
-                                .bg(if is_connected {
-                                    success
-                                } else {
-                                    AppColors::disconnected_dot(is_dark)
-                                }),
-                        ),
+                        .child(div().flex_shrink_0().size(px(8.0)).rounded_full().bg(
+                            if is_connected {
+                                success
+                            } else {
+                                AppColors::disconnected_dot(is_dark)
+                            },
+                        )),
                 )
                 // Row 2: user@host:port
                 .child(
@@ -393,104 +386,80 @@ fn render_connection_list_item(
                         .text_color(muted)
                         .overflow_hidden()
                         .whitespace_nowrap()
-                        .child(format!(
-                            "{}@{}:{}",
-                            conn.username, conn.host, conn.port
-                        )),
+                        .child(format!("{}@{}:{}", conn.username, conn.host, conn.port)),
                 )
                 // Row 3: Forwarding summary
                 .when(!fwd_summary.is_empty(), |this| {
-                    this.child(
-                        div()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(fwd_summary.clone()),
-                    )
+                    this.child(div().text_xs().text_color(muted).child(fwd_summary.clone()))
                 })
                 // Action area: button-style Connect/Disconnect
-                .child(
-                    h_flex().mt_1().child(if is_connected {
-                        let app_state_disc = app_state.clone();
-                        let sess_conn_id = conn.id;
-                        let btn_id: &'static str =
-                            Box::leak(format!("dc_{}", conn_id).into_boxed_str());
-                        div()
-                            .id(btn_id)
-                            .cursor_pointer()
-                            .px_2()
-                            .py(px(2.0))
-                            .rounded_lg()
-                            .bg(danger.opacity(0.10))
-                            .text_xs()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(danger)
-                            .hover(|s| s.bg(danger.opacity(0.18)))
-                            .on_mouse_down(
-                                gpui::MouseButton::Left,
-                                move |_event, _window, _app| {
-                                    let app_state = app_state_disc.clone();
-                                    tokio::spawn(async move {
-                                        if let Ok(sessions) = app_state.sessions.try_read() {
-                                            if let Some(session) = sessions
-                                                .iter()
-                                                .find(|s| s.connection_id == sess_conn_id)
-                                            {
-                                                let sid = session.id;
-                                                drop(sessions);
-                                                let _ =
-                                                    app_state.disconnect_session(sid).await;
-                                            }
+                .child(h_flex().mt_1().child(if is_connected {
+                    let app_state_disc = app_state.clone();
+                    let sess_conn_id = conn.id;
+                    let btn_id: &'static str =
+                        Box::leak(format!("dc_{}", conn_id).into_boxed_str());
+                    div()
+                        .id(btn_id)
+                        .cursor_pointer()
+                        .px_2()
+                        .py(px(2.0))
+                        .rounded_lg()
+                        .bg(danger.opacity(0.10))
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(danger)
+                        .hover(|s| s.bg(danger.opacity(0.18)))
+                        .on_mouse_down(gpui::MouseButton::Left, move |_event, _window, _app| {
+                            let app_state = app_state_disc.clone();
+                            tokio::spawn(async move {
+                                if let Ok(sessions) = app_state.sessions.try_read() {
+                                    if let Some(session) =
+                                        sessions.iter().find(|s| s.connection_id == sess_conn_id)
+                                    {
+                                        let sid = session.id;
+                                        drop(sessions);
+                                        let _ = app_state.disconnect_session(sid).await;
+                                    }
+                                }
+                            });
+                        })
+                        .child(t!("actions.disconnect").to_string())
+                } else {
+                    let btn_id: &'static str =
+                        Box::leak(format!("qc_{}", conn_id).into_boxed_str());
+                    div()
+                        .id(btn_id)
+                        .cursor_pointer()
+                        .px_2()
+                        .py(px(2.0))
+                        .rounded_lg()
+                        .bg(accent.opacity(0.10))
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(accent)
+                        .hover(|s| s.bg(accent.opacity(0.18)))
+                        .on_mouse_down(gpui::MouseButton::Left, move |_event, _window, _app| {
+                            let app_state = app_state_connect.clone();
+                            let conn = conn_clone.clone();
+                            tokio::spawn(async move {
+                                match &conn.auth_method {
+                                    AuthMethod::Password => {
+                                        app_state.show_password_input(conn.id).await;
+                                    }
+                                    AuthMethod::PublicKey {
+                                        passphrase_required,
+                                        ..
+                                    } => {
+                                        if *passphrase_required {
+                                            app_state.show_password_input(conn.id).await;
+                                        } else {
+                                            let _ = app_state.connect_session(conn.id, None).await;
                                         }
-                                    });
-                                },
-                            )
-                            .child(t!("actions.disconnect").to_string())
-                    } else {
-                        let btn_id: &'static str =
-                            Box::leak(format!("qc_{}", conn_id).into_boxed_str());
-                        div()
-                            .id(btn_id)
-                            .cursor_pointer()
-                            .px_2()
-                            .py(px(2.0))
-                            .rounded_lg()
-                            .bg(accent.opacity(0.10))
-                            .text_xs()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(accent)
-                            .hover(|s| s.bg(accent.opacity(0.18)))
-                            .on_mouse_down(
-                                gpui::MouseButton::Left,
-                                move |_event, _window, _app| {
-                                    let app_state = app_state_connect.clone();
-                                    let conn = conn_clone.clone();
-                                    tokio::spawn(async move {
-                                        match &conn.auth_method {
-                                            AuthMethod::Password => {
-                                                app_state
-                                                    .show_password_input(conn.id)
-                                                    .await;
-                                            }
-                                            AuthMethod::PublicKey {
-                                                passphrase_required,
-                                                ..
-                                            } => {
-                                                if *passphrase_required {
-                                                    app_state
-                                                        .show_password_input(conn.id)
-                                                        .await;
-                                                } else {
-                                                    let _ = app_state
-                                                        .connect_session(conn.id, None)
-                                                        .await;
-                                                }
-                                            }
-                                        }
-                                    });
-                                },
-                            )
-                            .child(t!("actions.connect").to_string())
-                    }),
-                ),
+                                    }
+                                }
+                            });
+                        })
+                        .child(t!("actions.connect").to_string())
+                })),
         )
 }

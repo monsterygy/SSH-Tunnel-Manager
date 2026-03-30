@@ -36,8 +36,9 @@ impl SessionFileStore {
     /// Write a session record to disk.
     pub fn write(&self, record: &SessionRecord) -> Result<()> {
         let path = self.dir.join(format!("{}.json", record.session_id));
-        let data = serde_json::to_string_pretty(record)
-            .map_err(|e| SshToolError::ConfigError(format!("Failed to serialize session: {}", e)))?;
+        let data = serde_json::to_string_pretty(record).map_err(|e| {
+            SshToolError::ConfigError(format!("Failed to serialize session: {}", e))
+        })?;
         fs::write(&path, data)?;
         Ok(())
     }

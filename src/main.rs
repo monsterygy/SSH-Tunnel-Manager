@@ -124,25 +124,22 @@ async fn main() -> anyhow::Result<()> {
                 let config = services::config_service::ConfigService::new()?;
                 let connections = config.load_connections()?;
 
-                let connection = find_connection(&name, &connections).ok_or_else(|| {
-                    anyhow::anyhow!("Connection '{}' not found", name)
-                })?;
+                let connection = find_connection(&name, &connections)
+                    .ok_or_else(|| anyhow::anyhow!("Connection '{}' not found", name))?;
 
-                let session_manager = std::sync::Arc::new(
-                    services::session_manager::SessionManager::new(
+                let session_manager =
+                    std::sync::Arc::new(services::session_manager::SessionManager::new(
                         connection.idle_timeout_seconds.unwrap_or(300),
-                    ),
-                );
+                    ));
                 session_manager.start_idle_monitor().await;
 
-                let ssh_session = services::ssh_service::SshService::connect(
-                    &connection,
-                    password.as_deref(),
-                )
-                .await?;
+                let ssh_session =
+                    services::ssh_service::SshService::connect(&connection, password.as_deref())
+                        .await?;
 
-                let session_id =
-                    session_manager.create_session(connection.clone(), ssh_session).await?;
+                let session_id = session_manager
+                    .create_session(connection.clone(), ssh_session)
+                    .await?;
 
                 // Set up tunnels if any forwarding is configured
                 if !connection.forwarding_configs.is_empty() {
@@ -173,7 +170,10 @@ async fn main() -> anyhow::Result<()> {
                 };
                 session_store.write(&session_record)?;
 
-                println!("Connected to '{}' (session: {})", connection.name, session_id);
+                println!(
+                    "Connected to '{}' (session: {})",
+                    connection.name, session_id
+                );
                 println!("Press Ctrl+C to disconnect...");
 
                 // Wait for either SIGINT (Ctrl+C) or SIGTERM (from `disconnect` command)
@@ -199,9 +199,8 @@ async fn main() -> anyhow::Result<()> {
                 let config = services::config_service::ConfigService::new()?;
                 let connections = config.load_connections()?;
 
-                let connection = find_connection(&name, &connections).ok_or_else(|| {
-                    anyhow::anyhow!("Connection '{}' not found", name)
-                })?;
+                let connection = find_connection(&name, &connections)
+                    .ok_or_else(|| anyhow::anyhow!("Connection '{}' not found", name))?;
 
                 if config.delete_connection(connection.id)? {
                     println!("Connection '{}' deleted", connection.name);
@@ -213,9 +212,8 @@ async fn main() -> anyhow::Result<()> {
                 let config = services::config_service::ConfigService::new()?;
                 let connections = config.load_connections()?;
 
-                let conn = find_connection(&name, &connections).ok_or_else(|| {
-                    anyhow::anyhow!("Connection '{}' not found", name)
-                })?;
+                let conn = find_connection(&name, &connections)
+                    .ok_or_else(|| anyhow::anyhow!("Connection '{}' not found", name))?;
 
                 println!("Name:     {}", conn.name);
                 println!("ID:       {}", conn.id);
@@ -246,8 +244,7 @@ async fn main() -> anyhow::Result<()> {
             }
             Some(cli::commands::Commands::Sessions) => {
                 let config = services::config_service::ConfigService::new()?;
-                let store =
-                    services::session_file::SessionFileStore::new(config.config_dir())?;
+                let store = services::session_file::SessionFileStore::new(config.config_dir())?;
                 let sessions = store.list_active()?;
 
                 if sessions.is_empty() {
@@ -279,8 +276,7 @@ async fn main() -> anyhow::Result<()> {
                     .map_err(|_| anyhow::anyhow!("Invalid session ID: {}", id))?;
 
                 let config = services::config_service::ConfigService::new()?;
-                let store =
-                    services::session_file::SessionFileStore::new(config.config_dir())?;
+                let store = services::session_file::SessionFileStore::new(config.config_dir())?;
 
                 match store.find(session_id)? {
                     Some(record) => {
@@ -297,7 +293,10 @@ async fn main() -> anyhow::Result<()> {
                             } else {
                                 // Process already gone, clean up stale file
                                 store.remove(session_id)?;
-                                println!("Session {} is no longer running (cleaned up)", session_id);
+                                println!(
+                                    "Session {} is no longer running (cleaned up)",
+                                    session_id
+                                );
                             }
                         }
                         #[cfg(not(unix))]
@@ -321,9 +320,8 @@ async fn main() -> anyhow::Result<()> {
                 let config = services::config_service::ConfigService::new()?;
                 let connections = config.load_connections()?;
 
-                let mut conn = find_connection(&connection, &connections).ok_or_else(|| {
-                    anyhow::anyhow!("Connection '{}' not found", connection)
-                })?;
+                let mut conn = find_connection(&connection, &connections)
+                    .ok_or_else(|| anyhow::anyhow!("Connection '{}' not found", connection))?;
 
                 let fwd = match r#type.as_str() {
                     "local" => {

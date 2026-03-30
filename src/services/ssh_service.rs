@@ -475,12 +475,7 @@ impl SshService {
 
         // Finally, open a channel to the destination through the last jump host
         let channel = current_session
-            .channel_open_direct_tcpip(
-                &destination.host,
-                destination.port as u32,
-                "localhost",
-                0,
-            )
+            .channel_open_direct_tcpip(&destination.host, destination.port as u32, "localhost", 0)
             .await
             .map_err(|e| {
                 SshToolError::SshConnectionFailed(format!(

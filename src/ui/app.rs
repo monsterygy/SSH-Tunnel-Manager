@@ -12,8 +12,8 @@ use std::sync::Arc;
 use ssh_tunnel_manager::state::{AppState, ConnectionFormData, ErrorSeverity};
 
 use super::components::{
-    render_connection_header, render_connection_sidebar, render_password_section, render_top_bar,
-    render_tunnel_card, section_card, AppColors,
+    AppColors, render_connection_header, render_connection_sidebar, render_password_section,
+    render_top_bar, render_tunnel_card, section_card,
 };
 
 /// Main application window with editable form inputs
@@ -565,12 +565,11 @@ impl SshTunnelApp {
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(text),
                             )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(muted)
-                                    .child(if expanded { "v" } else { ">" }),
-                            ),
+                            .child(div().text_sm().text_color(muted).child(if expanded {
+                                "v"
+                            } else {
+                                ">"
+                            })),
                     )
                     .on_mouse_down(gpui::MouseButton::Left, {
                         let show_advanced = &self.show_advanced as *const Cell<bool>;
@@ -1237,29 +1236,25 @@ impl SshTunnelApp {
             })
             // ── Scrollable form area with 4 cards ──
             .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scrollbar()
-                    .child(
-                        v_flex()
-                            .gap_4()
-                            .w_full()
-                            .p_4()
-                            .pb_8()
-                            .child(self.render_connection_card(cx))
-                            .child(self.render_authentication_card(cx))
-                            .child(render_tunnel_card(
-                                &self.app_state,
-                                &form_data,
-                                &self.local_port_input,
-                                &self.remote_host_input,
-                                &self.remote_port_input,
-                                &self.bind_address_input,
-                                is_dark,
-                            ))
-                            .child(self.render_advanced_card(cx)),
-                    ),
+                div().flex_1().min_h_0().overflow_y_scrollbar().child(
+                    v_flex()
+                        .gap_4()
+                        .w_full()
+                        .p_4()
+                        .pb_8()
+                        .child(self.render_connection_card(cx))
+                        .child(self.render_authentication_card(cx))
+                        .child(render_tunnel_card(
+                            &self.app_state,
+                            &form_data,
+                            &self.local_port_input,
+                            &self.remote_host_input,
+                            &self.remote_port_input,
+                            &self.bind_address_input,
+                            is_dark,
+                        ))
+                        .child(self.render_advanced_card(cx)),
+                ),
             )
             // Active sessions panel
             .child(self.render_sessions_panel(cx))

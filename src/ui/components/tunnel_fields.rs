@@ -129,14 +129,15 @@ pub fn render_tunnel_card(
         )
         // One-line mode description
         .child(
-            div().text_sm().text_color(muted).child(
-                match form_data.forwarding_type.as_str() {
+            div()
+                .text_sm()
+                .text_color(muted)
+                .child(match form_data.forwarding_type.as_str() {
                     "local" => t!("connection.local_mode_hint").to_string(),
                     "remote" => t!("connection.remote_mode_hint").to_string(),
                     "dynamic" => t!("connection.dynamic_mode_hint").to_string(),
                     _ => String::new(),
-                },
-            ),
+                }),
         )
         // Forwarding fields
         .child(
@@ -151,11 +152,9 @@ pub fn render_tunnel_card(
                                 .flex_1()
                                 .gap_1()
                                 .child(
-                                    label::Label::new(
-                                        t!("forwarding.bind_address").to_string(),
-                                    )
-                                    .text_size(rems(0.8))
-                                    .text_color(muted),
+                                    label::Label::new(t!("forwarding.bind_address").to_string())
+                                        .text_size(rems(0.8))
+                                        .text_color(muted),
                                 )
                                 .child(Input::new(bind_address_input).cleanable(true)),
                         )
@@ -200,11 +199,9 @@ pub fn render_tunnel_card(
                                     .w(px(120.0))
                                     .gap_1()
                                     .child(
-                                        label::Label::new(
-                                            t!("connection.remote_port").to_string(),
-                                        )
-                                        .text_size(rems(0.8))
-                                        .text_color(muted),
+                                        label::Label::new(t!("connection.remote_port").to_string())
+                                            .text_size(rems(0.8))
+                                            .text_color(muted),
                                     )
                                     .child(Input::new(remote_port_input).cleanable(true)),
                             ),

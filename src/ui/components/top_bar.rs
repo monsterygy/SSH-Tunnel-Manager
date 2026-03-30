@@ -1,6 +1,6 @@
 use gpui::*;
-use gpui_component::label;
 use gpui_component::h_flex;
+use gpui_component::label;
 use rust_i18n::t;
 use std::sync::Arc;
 
@@ -75,20 +75,17 @@ pub fn render_top_bar(app_state: &Arc<AppState>, is_dark: bool) -> Div {
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(muted)
                         .hover(|s| s.bg(accent.opacity(0.10)))
-                        .on_mouse_down(
-                            gpui::MouseButton::Left,
-                            move |_, window, _| {
-                                if let Ok(mut ui_state) = app_state_lang.ui_state.try_write() {
-                                    ui_state.language = if ui_state.language == "zh-CN" {
-                                        "en".to_string()
-                                    } else {
-                                        "zh-CN".to_string()
-                                    };
-                                    crate::utils::i18n::change_language(&ui_state.language);
-                                }
-                                window.refresh();
-                            },
-                        )
+                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
+                            if let Ok(mut ui_state) = app_state_lang.ui_state.try_write() {
+                                ui_state.language = if ui_state.language == "zh-CN" {
+                                    "en".to_string()
+                                } else {
+                                    "zh-CN".to_string()
+                                };
+                                crate::utils::i18n::change_language(&ui_state.language);
+                            }
+                            window.refresh();
+                        })
                         .child(if language == "zh-CN" { "EN" } else { "中" })
                 })
                 // Theme toggle — icon-style button with bg
@@ -111,28 +108,25 @@ pub fn render_top_bar(app_state: &Arc<AppState>, is_dark: bool) -> Div {
                         .text_xs()
                         .text_color(muted)
                         .hover(|s| s.bg(accent.opacity(0.10)))
-                        .on_mouse_down(
-                            gpui::MouseButton::Left,
-                            move |_, window, cx| {
-                                let is_dark =
-                                    if let Ok(mut ui_state) = app_state_theme.ui_state.try_write() {
-                                        ui_state.dark_mode = !ui_state.dark_mode;
-                                        ui_state.dark_mode
-                                    } else {
-                                        return;
-                                    };
-                                use gpui_component::theme::{Theme, ThemeMode};
-                                Theme::change(
-                                    if is_dark {
-                                        ThemeMode::Dark
-                                    } else {
-                                        ThemeMode::Light
-                                    },
-                                    Some(window),
-                                    cx,
-                                );
-                            },
-                        )
+                        .on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                            let is_dark =
+                                if let Ok(mut ui_state) = app_state_theme.ui_state.try_write() {
+                                    ui_state.dark_mode = !ui_state.dark_mode;
+                                    ui_state.dark_mode
+                                } else {
+                                    return;
+                                };
+                            use gpui_component::theme::{Theme, ThemeMode};
+                            Theme::change(
+                                if is_dark {
+                                    ThemeMode::Dark
+                                } else {
+                                    ThemeMode::Light
+                                },
+                                Some(window),
+                                cx,
+                            );
+                        })
                         .child(if dark_mode { "☀️" } else { "🌙" })
                 }),
         )
