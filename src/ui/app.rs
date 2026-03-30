@@ -6,10 +6,15 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::scroll::ScrollableElement;
 use gpui_component::*;
 use rust_i18n::t;
+use std::cell::Cell;
 use std::sync::Arc;
 
-use ssh_tunnel_manager::models::auth::AuthMethod;
 use ssh_tunnel_manager::state::{AppState, ConnectionFormData, ErrorSeverity};
+
+use super::components::{
+    render_connection_header, render_connection_sidebar, render_password_section, render_top_bar,
+    render_tunnel_card, section_card, AppColors,
+};
 
 /// Main application window with editable form inputs
 pub struct SshTunnelApp {
@@ -27,9 +32,13 @@ pub struct SshTunnelApp {
     remote_host_input: Entity<InputState>,
     remote_port_input: Entity<InputState>,
     bind_address_input: Entity<InputState>,
+    // UI-only state
+    show_advanced: Cell<bool>,
 }
 
 impl SshTunnelApp {
+    // ── Sync ──────────────────────────────────────────────────────────
+
     /// Sync form_data to Input components
     fn sync_form_to_inputs(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Ok(ui_state) = self.app_state.ui_state.try_read() {
@@ -81,6 +90,8 @@ impl SshTunnelApp {
             });
         }
     }
+
+    // ── Constructor ───────────────────────────────────────────────────
 
     /// Create a new SSH Tunnel Manager application
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -324,95 +335,84 @@ impl SshTunnelApp {
             remote_host_input,
             remote_port_input,
             bind_address_input,
+            show_advanced: Cell::new(false),
         }
     }
 
-    /// Render host info section
-    fn render_host_info(&self, cx: &mut Context<Self>) -> Div {
+    // ── Card 1: Connection (two-column) ──────────────────────────────
+
+    fn render_connection_card(&self, cx: &mut Context<Self>) -> Div {
         use label::Label;
 
-        let theme = cx.theme();
-        let card_bg = theme.background;
-        let border_color = theme.border;
-        let text_color = theme.foreground;
-        let muted_color = theme.muted_foreground;
+        let is_dark = cx.theme().mode.is_dark();
+        let muted = AppColors::secondary_text(is_dark);
 
-        v_flex()
-            .gap_4()
-            .p_4()
-            .bg(card_bg)
-            .border_1()
-            .border_color(border_color)
-            .rounded_lg()
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().text_sm().child("🖥️"))
-                    .child(
-                        Label::new(t!("connection.host_info").to_string())
-                            .text_size(rems(0.95))
-                            .text_color(text_color),
-                    ),
-            )
-            .child(
-                v_flex()
-                    .gap_2()
-                    .child(
-                        Label::new(t!("connection.connection_name").to_string())
-                            .text_size(rems(0.85))
-                            .text_color(muted_color),
-                    )
-                    .child(Input::new(&self.name_input).cleanable(true)),
-            )
+        section_card(&t!("connection.host_info").to_string(), is_dark)
+            // Row 1: Name + Host (two-column)
             .child(
                 h_flex()
                     .gap_4()
                     .child(
                         v_flex()
                             .flex_1()
-                            .gap_2()
+                            .gap_1()
                             .child(
-                                Label::new(t!("connection.host_address").to_string())
-                                    .text_size(rems(0.85))
-                                    .text_color(muted_color),
+                                Label::new(t!("connection.connection_name").to_string())
+                                    .text_size(rems(0.8))
+                                    .text_color(muted),
                             )
-                            .child(Input::new(&self.host_input).cleanable(true)),
+                            .child(Input::new(&self.name_input).cleanable(true)),
                     )
                     .child(
                         v_flex()
-                            .w(px(100.0))
-                            .gap_2()
+                            .flex_1()
+                            .gap_1()
                             .child(
-                                Label::new(t!("connection.port").to_string())
-                                    .text_size(rems(0.85))
-                                    .text_color(muted_color),
+                                Label::new(t!("connection.host_address").to_string())
+                                    .text_size(rems(0.8))
+                                    .text_color(muted),
                             )
-                            .child(Input::new(&self.port_input).cleanable(true)),
+                            .child(Input::new(&self.host_input).cleanable(true)),
                     ),
             )
+            // Row 2: SSH Port + Username (two-column)
             .child(
-                v_flex()
-                    .gap_2()
+                h_flex()
+                    .gap_4()
                     .child(
-                        Label::new(t!("connection.username").to_string())
-                            .text_size(rems(0.85))
-                            .text_color(muted_color),
+                        v_flex()
+                            .w(px(120.0))
+                            .gap_1()
+                            .child(
+                                Label::new(t!("connection.ssh_port").to_string())
+                                    .text_size(rems(0.8))
+                                    .text_color(muted),
+                            )
+                            .child(Input::new(&self.port_input).cleanable(true)),
                     )
-                    .child(Input::new(&self.username_input).cleanable(true)),
+                    .child(
+                        v_flex()
+                            .flex_1()
+                            .gap_1()
+                            .child(
+                                Label::new(t!("connection.username").to_string())
+                                    .text_size(rems(0.8))
+                                    .text_color(muted),
+                            )
+                            .child(Input::new(&self.username_input).cleanable(true)),
+                    ),
             )
     }
 
-    /// Render authentication section
-    fn render_authentication(&self, cx: &mut Context<Self>) -> Div {
+    // ── Card 2: Authentication ───────────────────────────────────────
+
+    fn render_authentication_card(&self, cx: &mut Context<Self>) -> Div {
         use label::Label;
 
-        let theme = cx.theme();
-        let card_bg = theme.background;
-        let border_color = theme.border;
-        let text_color = theme.foreground;
-        let muted_color = theme.muted_foreground;
-        let primary_color = theme.primary;
+        let is_dark = cx.theme().mode.is_dark();
+        let border = AppColors::border_color(is_dark);
+        let muted = AppColors::secondary_text(is_dark);
+        let accent = AppColors::accent_color(is_dark);
 
         let form_data = if let Ok(ui_state) = self.app_state.ui_state.try_read() {
             ui_state.form_data.clone()
@@ -422,42 +422,22 @@ impl SshTunnelApp {
 
         let is_publickey = form_data.auth_type == "publickey";
 
-        v_flex()
-            .gap_4()
-            .p_4()
-            .bg(card_bg)
-            .border_1()
-            .border_color(border_color)
-            .rounded_lg()
+        section_card(&t!("connection.authentication").to_string(), is_dark)
+            // Segmented control
             .child(
                 h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().text_sm().child("🔐"))
-                    .child(
-                        Label::new(t!("connection.authentication").to_string())
-                            .text_size(rems(0.95))
-                            .text_color(text_color),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .gap_2()
+                    .gap_0()
                     .child({
                         let app_state = self.app_state.clone();
                         div()
                             .cursor_pointer()
-                            .px_3()
+                            .px_4()
                             .py_2()
-                            .rounded_md()
+                            .rounded_l_lg()
                             .border_1()
-                            .border_color(if !is_publickey {
-                                primary_color
-                            } else {
-                                border_color
-                            })
+                            .border_color(if !is_publickey { accent } else { border })
                             .bg(if !is_publickey {
-                                primary_color.opacity(0.08)
+                                accent.opacity(0.10)
                             } else {
                                 gpui::transparent_black()
                             })
@@ -470,57 +450,28 @@ impl SshTunnelApp {
                                 });
                             })
                             .child(
-                                h_flex()
-                                    .gap_2()
-                                    .items_center()
-                                    .child(
-                                        div()
-                                            .size(px(16.0))
-                                            .rounded_full()
-                                            .border_2()
-                                            .border_color(if !is_publickey {
-                                                primary_color
-                                            } else {
-                                                border_color
-                                            })
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .when(!is_publickey, |this| {
-                                                this.child(
-                                                    div()
-                                                        .size(px(8.0))
-                                                        .rounded_full()
-                                                        .bg(primary_color),
-                                                )
-                                            }),
-                                    )
-                                    .child(
-                                        Label::new(t!("connection.password").to_string())
-                                            .text_size(rems(0.85))
-                                            .text_color(if !is_publickey {
-                                                text_color
-                                            } else {
-                                                muted_color
-                                            }),
-                                    ),
+                                div()
+                                    .text_sm()
+                                    .font_weight(if !is_publickey {
+                                        FontWeight::MEDIUM
+                                    } else {
+                                        FontWeight::NORMAL
+                                    })
+                                    .text_color(if !is_publickey { accent } else { muted })
+                                    .child(t!("connection.password").to_string()),
                             )
                     })
                     .child({
                         let app_state = self.app_state.clone();
                         div()
                             .cursor_pointer()
-                            .px_3()
+                            .px_4()
                             .py_2()
-                            .rounded_md()
+                            .rounded_r_lg()
                             .border_1()
-                            .border_color(if is_publickey {
-                                primary_color
-                            } else {
-                                border_color
-                            })
+                            .border_color(if is_publickey { accent } else { border })
                             .bg(if is_publickey {
-                                primary_color.opacity(0.08)
+                                accent.opacity(0.10)
                             } else {
                                 gpui::transparent_black()
                             })
@@ -533,351 +484,165 @@ impl SshTunnelApp {
                                 });
                             })
                             .child(
-                                h_flex()
-                                    .gap_2()
-                                    .items_center()
-                                    .child(
-                                        div()
-                                            .size(px(16.0))
-                                            .rounded_full()
-                                            .border_2()
-                                            .border_color(if is_publickey {
-                                                primary_color
-                                            } else {
-                                                border_color
-                                            })
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .when(is_publickey, |this| {
-                                                this.child(
-                                                    div()
-                                                        .size(px(8.0))
-                                                        .rounded_full()
-                                                        .bg(primary_color),
-                                                )
-                                            }),
-                                    )
-                                    .child(
-                                        Label::new(t!("connection.public_key").to_string())
-                                            .text_size(rems(0.85))
-                                            .text_color(if is_publickey {
-                                                text_color
-                                            } else {
-                                                muted_color
-                                            }),
-                                    ),
+                                div()
+                                    .text_sm()
+                                    .font_weight(if is_publickey {
+                                        FontWeight::MEDIUM
+                                    } else {
+                                        FontWeight::NORMAL
+                                    })
+                                    .text_color(if is_publickey { accent } else { muted })
+                                    .child(t!("connection.public_key").to_string()),
                             )
                     }),
             )
+            // Conditional content
             .child(if is_publickey {
                 v_flex()
-                    .gap_1()
+                    .gap_2()
                     .child(
                         Label::new(t!("connection.private_key_path").to_string())
-                            .text_size(rems(0.85))
-                            .text_color(muted_color),
+                            .text_size(rems(0.8))
+                            .text_color(muted),
                     )
                     .child(Input::new(&self.private_key_path_input).cleanable(true))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted)
+                            .child("Passphrase will be requested on connect if required"),
+                    )
             } else {
                 v_flex().gap_1().child(
                     div()
                         .text_sm()
-                        .text_color(muted_color)
+                        .text_color(muted)
                         .child(t!("connection.password_hint").to_string()),
                 )
             })
     }
 
-    /// Render tunnel mode section
-    fn render_tunnel_mode(&self, cx: &mut Context<Self>) -> Div {
+    // ── Card 4: Advanced (collapsible) ───────────────────────────────
+
+    fn render_advanced_card(&self, cx: &mut Context<Self>) -> Div {
         use label::Label;
 
-        let theme = cx.theme();
-        let card_bg = theme.background;
-        let border_color = theme.border;
-        let text_color = theme.foreground;
-        let muted_color = theme.muted_foreground;
-        let primary_color = theme.primary;
+        let is_dark = cx.theme().mode.is_dark();
+        let card_bg = AppColors::card_bg(is_dark);
+        let border = AppColors::border_color(is_dark);
+        let text = AppColors::primary_text(is_dark);
+        let muted = AppColors::secondary_text(is_dark);
 
-        let form_data = if let Ok(ui_state) = self.app_state.ui_state.try_read() {
-            ui_state.form_data.clone()
+        let expanded = self.show_advanced.get();
+
+        let (compression, quiet_mode) = if let Ok(ui_state) = self.app_state.ui_state.try_read() {
+            (
+                ui_state.form_data.compression,
+                ui_state.form_data.quiet_mode,
+            )
         } else {
-            ConnectionFormData::default()
+            (true, false)
         };
 
         v_flex()
-            .gap_4()
             .p_4()
             .bg(card_bg)
             .border_1()
-            .border_color(border_color)
+            .border_color(border)
             .rounded_lg()
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().text_sm().child("🔀"))
-                    .child(
-                        Label::new(t!("connection.tunnel_mode").to_string())
-                            .text_size(rems(0.95))
-                            .text_color(text_color),
-                    ),
-            )
+            // Title bar (always visible, clickable to toggle)
             .child(
                 div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_2()
-                    .child(self.render_mode_radio(
-                        &format!("{} (-L)", t!("forwarding.local")),
-                        form_data.forwarding_type == "local",
-                        "local",
-                        border_color,
-                        text_color,
-                        primary_color,
-                    ))
-                    .child(self.render_mode_radio(
-                        &format!("{} (-R)", t!("forwarding.remote")),
-                        form_data.forwarding_type == "remote",
-                        "remote",
-                        border_color,
-                        text_color,
-                        primary_color,
-                    ))
-                    .child(self.render_mode_radio(
-                        &format!("{} (-D)", t!("forwarding.dynamic")),
-                        form_data.forwarding_type == "dynamic",
-                        "dynamic",
-                        border_color,
-                        text_color,
-                        primary_color,
-                    )),
-            )
-            .child(div().mt_2().text_sm().text_color(muted_color).child(
-                match form_data.forwarding_type.as_str() {
-                    "local" => format!("📥 {}", t!("connection.local_mode_hint")),
-                    "remote" => format!("📤 {}", t!("connection.remote_mode_hint")),
-                    "dynamic" => format!("🌐 {}", t!("connection.dynamic_mode_hint")),
-                    _ => String::new(),
-                },
-            ))
-    }
-
-    fn render_mode_radio(
-        &self,
-        label: &str,
-        selected: bool,
-        mode: &str,
-        border_color: Hsla,
-        text_color: Hsla,
-        primary_color: Hsla,
-    ) -> impl IntoElement {
-        let app_state = self.app_state.clone();
-        let mode = mode.to_string();
-        let muted_color = gpui::hsla(0.0, 0.0, 0.45, 1.0);
-
-        div()
-            .cursor_pointer()
-            .px_3()
-            .py_2()
-            .rounded_md()
-            .border_1()
-            .border_color(if selected {
-                primary_color
-            } else {
-                border_color
-            })
-            .bg(if selected {
-                primary_color.opacity(0.08)
-            } else {
-                gpui::transparent_black()
-            })
-            .on_mouse_down(gpui::MouseButton::Left, move |_event, _window, _app| {
-                let app_state = app_state.clone();
-                let mode = mode.clone();
-                tokio::spawn(async move {
-                    app_state.update_form_field("forwarding_type", mode).await;
-                });
-            })
-            .child(
-                h_flex()
-                    .gap_2()
-                    .items_center()
-                    .justify_center()
+                    .id("advanced_toggle")
+                    .cursor_pointer()
                     .child(
-                        div()
-                            .size(px(14.0))
-                            .rounded_full()
-                            .border_2()
-                            .border_color(if selected {
-                                primary_color
-                            } else {
-                                border_color
-                            })
-                            .flex()
+                        h_flex()
                             .items_center()
-                            .justify_center()
-                            .when(selected, |this| {
-                                this.child(div().size(px(6.0)).rounded_full().bg(primary_color))
-                            }),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(if selected { text_color } else { muted_color })
-                            .child(label.to_string()),
-                    ),
-            )
-    }
-
-    /// Render forward rules section based on tunnel mode
-    fn render_forward_rules(&self, cx: &mut Context<Self>) -> Div {
-        use label::Label;
-
-        let theme = cx.theme();
-        let card_bg = theme.background;
-        let border_color = theme.border;
-        let text_color = theme.foreground;
-        let muted_color = theme.muted_foreground;
-
-        let form_data = if let Ok(ui_state) = self.app_state.ui_state.try_read() {
-            ui_state.form_data.clone()
-        } else {
-            ConnectionFormData::default()
-        };
-
-        let is_dynamic = form_data.forwarding_type == "dynamic";
-        let is_remote = form_data.forwarding_type == "remote";
-
-        v_flex()
-            .gap_4()
-            .p_4()
-            .bg(card_bg)
-            .border_1()
-            .border_color(border_color)
-            .rounded_lg()
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().text_sm().child("📡"))
-                    .child(
-                        Label::new(t!("connection.port_forwarding").to_string())
-                            .text_size(rems(0.95))
-                            .text_color(text_color),
-                    ),
-            )
-            .child(
-                v_flex()
-                    .gap_4()
-                    // Bind settings (always shown)
-                    .child(
-                        v_flex()
-                            .gap_2()
+                            .justify_between()
                             .child(
-                                Label::new(if is_dynamic {
-                                    t!("connection.socks_proxy_settings").to_string()
-                                } else {
-                                    t!("connection.local_binding").to_string()
-                                })
-                                .text_size(rems(0.85))
-                                .text_color(muted_color),
+                                Label::new(t!("connection.advanced_options").to_string())
+                                    .text_size(rems(0.95))
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(text),
                             )
                             .child(
-                                h_flex()
-                                    .gap_3()
-                                    .child(
-                                        v_flex()
-                                            .flex_1()
-                                            .gap_1()
-                                            .child(
-                                                Label::new(
-                                                    t!("forwarding.bind_address").to_string(),
-                                                )
-                                                .text_size(rems(0.8))
-                                                .text_color(muted_color),
-                                            )
-                                            .child(
-                                                Input::new(&self.bind_address_input)
-                                                    .cleanable(true),
-                                            ),
-                                    )
-                                    .child(
-                                        v_flex()
-                                            .w(px(120.0))
-                                            .gap_1()
-                                            .child(
-                                                Label::new(t!("connection.port").to_string())
-                                                    .text_size(rems(0.8))
-                                                    .text_color(muted_color),
-                                            )
-                                            .child(
-                                                Input::new(&self.local_port_input).cleanable(true),
-                                            ),
-                                    ),
+                                div()
+                                    .text_sm()
+                                    .text_color(muted)
+                                    .child(if expanded { "v" } else { ">" }),
                             ),
                     )
-                    // Remote destination (only for Local and Remote modes)
-                    .when(!is_dynamic, |this| {
-                        this.child(
-                            v_flex()
-                                .gap_2()
-                                .child(h_flex().items_center().justify_center().child(
-                                    div().text_sm().text_color(muted_color).child(if is_remote {
-                                        format!("⬆️ {}", t!("connection.to_remote"))
-                                    } else {
-                                        format!("⬇️ {}", t!("connection.from_remote"))
-                                    }),
-                                ))
-                                .child(
-                                    h_flex()
-                                        .gap_3()
-                                        .child(
-                                            v_flex()
-                                                .flex_1()
-                                                .gap_1()
-                                                .child(
-                                                    Label::new(if is_remote {
-                                                        t!("connection.local_host").to_string()
-                                                    } else {
-                                                        t!("forwarding.remote_host").to_string()
-                                                    })
-                                                    .text_size(rems(0.8))
-                                                    .text_color(muted_color),
-                                                )
-                                                .child(
-                                                    Input::new(&self.remote_host_input)
-                                                        .cleanable(true),
-                                                ),
-                                        )
-                                        .child(
-                                            v_flex()
-                                                .w(px(120.0))
-                                                .gap_1()
-                                                .child(
-                                                    Label::new(t!("connection.port").to_string())
-                                                        .text_size(rems(0.8))
-                                                        .text_color(muted_color),
-                                                )
-                                                .child(
-                                                    Input::new(&self.remote_port_input)
-                                                        .cleanable(true),
-                                                ),
-                                        ),
-                                ),
-                        )
-                    })
-                    // Dynamic mode info
-                    .when(is_dynamic, |this| {
-                        this.child(
-                            div()
-                                .text_sm()
-                                .text_color(muted_color)
-                                .child(t!("connection.socks5_hint").to_string()),
-                        )
+                    .on_mouse_down(gpui::MouseButton::Left, {
+                        let show_advanced = &self.show_advanced as *const Cell<bool>;
+                        move |_event, window, _app| {
+                            // SAFETY: show_advanced lives as long as SshTunnelApp
+                            let cell = unsafe { &*show_advanced };
+                            cell.set(!cell.get());
+                            window.refresh();
+                        }
                     }),
             )
+            // Summary when collapsed
+            .when(!expanded, |this| {
+                this.child(
+                    div()
+                        .mt_1()
+                        .text_xs()
+                        .text_color(muted)
+                        .child("Compression, host key verification, timeout"),
+                )
+            })
+            // Content (only when expanded)
+            .when(expanded, |this| {
+                let app_state_compression = self.app_state.clone();
+                let app_state_quiet = self.app_state.clone();
+
+                this.child(
+                    h_flex()
+                        .mt_3()
+                        .gap_4()
+                        .child(Self::render_checkbox(
+                            "compression_toggle",
+                            t!("connection.compression").to_string(),
+                            compression,
+                            card_bg,
+                            border,
+                            text,
+                            muted,
+                            if is_dark {
+                                hsla(0.0, 0.0, 0.18, 1.0)
+                            } else {
+                                hsla(0.0, 0.0, 0.96, 1.0)
+                            },
+                            move || {
+                                let app_state = app_state_compression.clone();
+                                tokio::spawn(async move {
+                                    app_state.toggle_compression().await;
+                                });
+                            },
+                        ))
+                        .child(Self::render_checkbox(
+                            "quiet_mode_toggle",
+                            t!("connection.quiet_mode").to_string(),
+                            quiet_mode,
+                            card_bg,
+                            border,
+                            text,
+                            muted,
+                            if is_dark {
+                                hsla(0.0, 0.0, 0.18, 1.0)
+                            } else {
+                                hsla(0.0, 0.0, 0.96, 1.0)
+                            },
+                            move || {
+                                let app_state = app_state_quiet.clone();
+                                tokio::spawn(async move {
+                                    app_state.toggle_quiet_mode().await;
+                                });
+                            },
+                        )),
+                )
+            })
     }
 
     /// Render a checkbox toggle with label
@@ -896,7 +661,7 @@ impl SshTunnelApp {
         F: Fn() + 'static,
     {
         use label::Label;
-        let success_color = gpui::hsla(142.0 / 360.0, 0.71, 0.45, 1.0);
+        let success_color = AppColors::success_color();
 
         div()
             .id(id)
@@ -912,7 +677,7 @@ impl SshTunnelApp {
                     } else {
                         muted_bg
                     })
-                    .rounded_md()
+                    .rounded_lg()
                     .child(
                         div()
                             .size(px(16.0))
@@ -927,7 +692,7 @@ impl SshTunnelApp {
                                 this.child(
                                     div()
                                         .text_xs()
-                                        .text_color(gpui::hsla(0.0, 0.0, 1.0, 1.0))
+                                        .text_color(hsla(0.0, 0.0, 1.0, 1.0))
                                         .child("✓"),
                                 )
                             }),
@@ -943,96 +708,17 @@ impl SshTunnelApp {
             })
     }
 
-    /// Render options section
-    fn render_options(&self, cx: &mut Context<Self>) -> Div {
-        use label::Label;
+    // ── Template Selector ────────────────────────────────────────────
 
-        let theme = cx.theme();
-        let card_bg = theme.background;
-        let border_color = theme.border;
-        let text_color = theme.foreground;
-        let muted_color = theme.muted_foreground;
-        let muted_bg = theme.muted;
-
-        // Get current form data
-        let (compression, quiet_mode) = if let Ok(ui_state) = self.app_state.ui_state.try_read() {
-            (
-                ui_state.form_data.compression,
-                ui_state.form_data.quiet_mode,
-            )
-        } else {
-            (true, false)
-        };
-
-        let app_state_compression = self.app_state.clone();
-        let app_state_quiet = self.app_state.clone();
-
-        v_flex()
-            .gap_4()
-            .p_4()
-            .bg(card_bg)
-            .border_1()
-            .border_color(border_color)
-            .rounded_lg()
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_2()
-                    .child(div().text_sm().child("⚙️"))
-                    .child(
-                        Label::new(t!("connection.advanced_options").to_string())
-                            .text_size(rems(0.95))
-                            .text_color(text_color),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .gap_4()
-                    .child(Self::render_checkbox(
-                        "compression_toggle",
-                        t!("connection.compression").to_string(),
-                        compression,
-                        card_bg,
-                        border_color,
-                        text_color,
-                        muted_color,
-                        muted_bg,
-                        move || {
-                            let app_state = app_state_compression.clone();
-                            tokio::spawn(async move {
-                                app_state.toggle_compression().await;
-                            });
-                        },
-                    ))
-                    .child(Self::render_checkbox(
-                        "quiet_mode_toggle",
-                        t!("connection.quiet_mode").to_string(),
-                        quiet_mode,
-                        card_bg,
-                        border_color,
-                        text_color,
-                        muted_color,
-                        muted_bg,
-                        move || {
-                            let app_state = app_state_quiet.clone();
-                            tokio::spawn(async move {
-                                app_state.toggle_quiet_mode().await;
-                            });
-                        },
-                    )),
-            )
-    }
-
-    /// Render template selector panel
     fn render_template_selector(&self, cx: &mut Context<Self>) -> Div {
         use label::Label;
 
-        let theme = cx.theme();
-        let sidebar_bg = theme.sidebar;
-        let card_bg = theme.background;
-        let border_color = theme.border;
-        let text_color = theme.foreground;
-        let muted_color = theme.muted_foreground;
+        let is_dark = cx.theme().mode.is_dark();
+        let card_bg = AppColors::card_bg(is_dark);
+        let border = AppColors::border_color(is_dark);
+        let text = AppColors::primary_text(is_dark);
+        let muted = AppColors::secondary_text(is_dark);
+        let page_bg = AppColors::page_bg(is_dark);
 
         let templates = vec![
             (
@@ -1070,9 +756,9 @@ impl SshTunnelApp {
         v_flex()
             .flex_shrink_0()
             .p_4()
-            .bg(sidebar_bg)
+            .bg(page_bg)
             .border_b_1()
-            .border_color(border_color)
+            .border_color(border)
             .child(
                 h_flex()
                     .items_center()
@@ -1081,7 +767,8 @@ impl SshTunnelApp {
                     .child(
                         Label::new(t!("app.quick_templates").to_string())
                             .text_size(rems(0.95))
-                            .text_color(text_color),
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(text),
                     )
                     .child({
                         let app_state = self.app_state.clone();
@@ -1089,9 +776,9 @@ impl SshTunnelApp {
                             .cursor_pointer()
                             .px_2()
                             .py_1()
-                            .rounded_md()
+                            .rounded_lg()
                             .text_xs()
-                            .text_color(muted_color)
+                            .text_color(muted)
                             .on_mouse_down(gpui::MouseButton::Left, move |_, _, _| {
                                 let app_state = app_state.clone();
                                 tokio::spawn(async move {
@@ -1115,7 +802,7 @@ impl SshTunnelApp {
                             .py_2()
                             .bg(card_bg)
                             .border_1()
-                            .border_color(border_color)
+                            .border_color(border)
                             .rounded_lg()
                             .on_mouse_down(gpui::MouseButton::Left, move |_, _, _| {
                                 let app_state = app_state.clone();
@@ -1132,14 +819,16 @@ impl SshTunnelApp {
                                         div()
                                             .text_sm()
                                             .font_weight(FontWeight::MEDIUM)
-                                            .text_color(text_color)
+                                            .text_color(text)
                                             .child(name),
                                     )
-                                    .child(div().text_xs().text_color(muted_color).child(desc)),
+                                    .child(div().text_xs().text_color(muted).child(desc)),
                             )
                     })),
             )
     }
+
+    // ── Helpers ───────────────────────────────────────────────────────
 
     /// Helper: Format bytes to human-readable string
     fn format_bytes(bytes: u64) -> String {
@@ -1173,7 +862,8 @@ impl SshTunnelApp {
         }
     }
 
-    /// Render notification bar (errors/success messages)
+    // ── Notifications ────────────────────────────────────────────────
+
     fn render_notifications(&self, cx: &mut Context<Self>) -> Option<Div> {
         let ui_state = if let Ok(state) = self.app_state.ui_state.try_read() {
             state.clone()
@@ -1182,63 +872,62 @@ impl SshTunnelApp {
         };
 
         let app_state = self.app_state.clone();
-        let theme = cx.theme();
-        let is_dark = theme.mode.is_dark();
+        let is_dark = cx.theme().mode.is_dark();
 
-        // Define semantic colors based on theme
+        // Notification colors
         let error_bg = if is_dark {
-            gpui::hsla(0.0, 0.40, 0.20, 1.0)
+            hsla(0.0, 0.40, 0.20, 1.0)
         } else {
-            gpui::hsla(0.0, 0.86, 0.94, 1.0)
+            hsla(0.0, 0.86, 0.94, 1.0)
         };
-        let error_border = gpui::hsla(0.0, 0.84, 0.60, 1.0);
+        let error_border = AppColors::danger_color();
         let error_text = if is_dark {
-            gpui::hsla(0.0, 0.75, 0.80, 1.0)
+            hsla(0.0, 0.75, 0.80, 1.0)
         } else {
-            gpui::hsla(0.0, 0.70, 0.35, 1.0)
+            hsla(0.0, 0.70, 0.35, 1.0)
         };
 
         let warning_bg = if is_dark {
-            gpui::hsla(38.0 / 360.0, 0.40, 0.20, 1.0)
+            hsla(38.0 / 360.0, 0.40, 0.20, 1.0)
         } else {
-            gpui::hsla(45.0 / 360.0, 0.93, 0.89, 1.0)
+            hsla(45.0 / 360.0, 0.93, 0.89, 1.0)
         };
-        let warning_border = gpui::hsla(38.0 / 360.0, 0.92, 0.50, 1.0);
+        let warning_border = hsla(38.0 / 360.0, 0.92, 0.50, 1.0);
         let warning_text = if is_dark {
-            gpui::hsla(38.0 / 360.0, 0.80, 0.70, 1.0)
+            hsla(38.0 / 360.0, 0.80, 0.70, 1.0)
         } else {
-            gpui::hsla(28.0 / 360.0, 0.80, 0.31, 1.0)
+            hsla(28.0 / 360.0, 0.80, 0.31, 1.0)
         };
 
         let info_bg = if is_dark {
-            gpui::hsla(217.0 / 360.0, 0.40, 0.20, 1.0)
+            hsla(217.0 / 360.0, 0.40, 0.20, 1.0)
         } else {
-            gpui::hsla(214.0 / 360.0, 0.95, 0.93, 1.0)
+            hsla(214.0 / 360.0, 0.95, 0.93, 1.0)
         };
-        let info_border = gpui::hsla(217.0 / 360.0, 0.91, 0.60, 1.0);
+        let info_border = hsla(217.0 / 360.0, 0.91, 0.60, 1.0);
         let info_text = if is_dark {
-            gpui::hsla(217.0 / 360.0, 0.80, 0.75, 1.0)
+            hsla(217.0 / 360.0, 0.80, 0.75, 1.0)
         } else {
-            gpui::hsla(224.0 / 360.0, 0.76, 0.40, 1.0)
+            hsla(224.0 / 360.0, 0.76, 0.40, 1.0)
         };
 
         let success_bg = if is_dark {
-            gpui::hsla(152.0 / 360.0, 0.40, 0.15, 1.0)
+            hsla(152.0 / 360.0, 0.40, 0.15, 1.0)
         } else {
-            gpui::hsla(149.0 / 360.0, 0.80, 0.90, 1.0)
+            hsla(149.0 / 360.0, 0.80, 0.90, 1.0)
         };
-        let success_border = gpui::hsla(160.0 / 360.0, 0.84, 0.39, 1.0);
+        let success_border = hsla(160.0 / 360.0, 0.84, 0.39, 1.0);
         let success_text = if is_dark {
-            gpui::hsla(152.0 / 360.0, 0.70, 0.70, 1.0)
+            hsla(152.0 / 360.0, 0.70, 0.70, 1.0)
         } else {
-            gpui::hsla(160.0 / 360.0, 0.84, 0.20, 1.0)
+            hsla(160.0 / 360.0, 0.84, 0.20, 1.0)
         };
 
         if let Some(error) = &ui_state.error_message {
-            let (bg_color, border_color, text_color, icon) = match error.severity {
-                ErrorSeverity::Error => (error_bg, error_border, error_text, "❌"),
-                ErrorSeverity::Warning => (warning_bg, warning_border, warning_text, "⚠️"),
-                ErrorSeverity::Info => (info_bg, info_border, info_text, "ℹ️"),
+            let (bg_color, bdr_color, txt_color, icon) = match error.severity {
+                ErrorSeverity::Error => (error_bg, error_border, error_text, "X"),
+                ErrorSeverity::Warning => (warning_bg, warning_border, warning_text, "!"),
+                ErrorSeverity::Info => (info_bg, info_border, info_text, "i"),
             };
 
             Some(
@@ -1247,7 +936,7 @@ impl SshTunnelApp {
                     .mb_2()
                     .bg(bg_color)
                     .border_1()
-                    .border_color(border_color)
+                    .border_color(bdr_color)
                     .rounded_lg()
                     .child(
                         h_flex()
@@ -1257,11 +946,17 @@ impl SshTunnelApp {
                                 h_flex()
                                     .gap_2()
                                     .items_center()
-                                    .child(div().text_sm().child(icon))
                                     .child(
                                         div()
                                             .text_sm()
-                                            .text_color(text_color)
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(txt_color)
+                                            .child(icon),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(txt_color)
                                             .child(error.message.clone()),
                                     ),
                             )
@@ -1295,7 +990,13 @@ impl SshTunnelApp {
                                 h_flex()
                                     .gap_2()
                                     .items_center()
-                                    .child(div().text_sm().child("✅"))
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(success_text)
+                                            .child("OK"),
+                                    )
                                     .child(
                                         div()
                                             .text_sm()
@@ -1321,134 +1022,35 @@ impl SshTunnelApp {
         }
     }
 
-    fn render_header(&self, cx: &mut Context<Self>) -> Div {
-        use button::Button;
-        use label::Label;
+    // ── Sessions Panel ───────────────────────────────────────────────
 
-        let theme = cx.theme();
-        let header_bg = theme.sidebar;
-        let title_color = theme.foreground;
-        let muted_color = theme.muted_foreground;
-
-        // Get current UI state
-        let (dark_mode, language) = if let Ok(ui_state) = self.app_state.ui_state.try_read() {
-            (ui_state.dark_mode, ui_state.language.clone())
-        } else {
-            (false, "en".to_string())
-        };
-
-        let app_state = self.app_state.clone();
-        let app_state2 = self.app_state.clone();
-
-        h_flex()
-            .items_center()
-            .justify_between()
-            .px_4()
-            .py_3()
-            .bg(header_bg)
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_3()
-                    .child(div().text_lg().child("🔐"))
-                    .child(
-                        Label::new(t!("app.title").to_string())
-                            .text_size(rems(1.1))
-                            .text_color(title_color),
-                    ),
-            )
-            .child(
-                h_flex()
-                    .items_center()
-                    .gap_3()
-                    // Language toggle button
-                    .child(
-                        Button::new("lang-toggle")
-                            .small()
-                            .ghost()
-                            .label(if language == "zh-CN" {
-                                "Switch to English"
-                            } else {
-                                "切换为简体中文"
-                            })
-                            .on_click(move |_, window, _cx| {
-                                // Toggle language synchronously
-                                if let Ok(mut ui_state) = app_state.ui_state.try_write() {
-                                    ui_state.language = if ui_state.language == "zh-CN" {
-                                        "en".to_string()
-                                    } else {
-                                        "zh-CN".to_string()
-                                    };
-                                    crate::utils::i18n::change_language(&ui_state.language);
-                                }
-                                // Refresh the window to update all text
-                                window.refresh();
-                            }),
-                    )
-                    // Theme toggle button
-                    .child(
-                        Button::new("theme-toggle")
-                            .small()
-                            .ghost()
-                            .label(if dark_mode { "☀️" } else { "🌙" })
-                            .on_click(move |_, window, cx| {
-                                // Toggle dark mode synchronously using try_write
-                                let is_dark =
-                                    if let Ok(mut ui_state) = app_state2.ui_state.try_write() {
-                                        ui_state.dark_mode = !ui_state.dark_mode;
-                                        ui_state.dark_mode
-                                    } else {
-                                        return;
-                                    };
-                                // Update theme
-                                use gpui_component::theme::{Theme, ThemeMode};
-                                Theme::change(
-                                    if is_dark {
-                                        ThemeMode::Dark
-                                    } else {
-                                        ThemeMode::Light
-                                    },
-                                    Some(window),
-                                    cx,
-                                );
-                            }),
-                    )
-                    .child(div().text_xs().text_color(muted_color).child("v1.0.0")),
-            )
-    }
-
-    /// Render active sessions panel (collapsible)
     fn render_sessions_panel(&self, cx: &mut Context<Self>) -> Div {
         use button::Button;
         use label::Label;
 
-        // Get theme colors
-        let theme = cx.theme();
-        let is_dark = theme.mode.is_dark();
-        let border_color = theme.border;
-        let card_bg = theme.background;
-        let text_color = theme.foreground;
-        let muted_color = theme.muted_foreground;
+        let is_dark = cx.theme().mode.is_dark();
+        let border = AppColors::border_color(is_dark);
+        let card_bg = AppColors::card_bg(is_dark);
+        let text = AppColors::primary_text(is_dark);
+        let muted = AppColors::secondary_text(is_dark);
+        let success = AppColors::success_color();
 
-        // Session panel colors
         let session_bg = if is_dark {
-            gpui::hsla(142.0 / 360.0, 0.30, 0.12, 1.0)
+            hsla(142.0 / 360.0, 0.30, 0.12, 1.0)
         } else {
-            gpui::hsla(142.0 / 360.0, 0.76, 0.97, 1.0)
+            hsla(142.0 / 360.0, 0.76, 0.97, 1.0)
         };
         let session_border = if is_dark {
-            gpui::hsla(142.0 / 360.0, 0.50, 0.25, 1.0)
+            hsla(142.0 / 360.0, 0.50, 0.25, 1.0)
         } else {
-            gpui::hsla(149.0 / 360.0, 0.80, 0.90, 1.0)
+            hsla(149.0 / 360.0, 0.80, 0.90, 1.0)
         };
-        let success_color = gpui::hsla(142.0 / 360.0, 0.71, 0.45, 1.0);
         let session_title_color = if is_dark {
-            gpui::hsla(142.0 / 360.0, 0.70, 0.70, 1.0)
+            hsla(142.0 / 360.0, 0.70, 0.70, 1.0)
         } else {
-            gpui::hsla(144.0 / 360.0, 0.75, 0.20, 1.0)
+            hsla(144.0 / 360.0, 0.75, 0.20, 1.0)
         };
 
-        // Read sessions from app state
         let sessions = if let Ok(sess) = self.app_state.sessions.try_read() {
             sess.clone()
         } else {
@@ -1457,7 +1059,6 @@ impl SshTunnelApp {
 
         let session_count = sessions.len();
 
-        // Only show if there are active sessions
         if sessions.is_empty() {
             return div();
         }
@@ -1467,7 +1068,7 @@ impl SshTunnelApp {
             .max_h(px(200.0))
             .overflow_hidden()
             .border_t_1()
-            .border_color(border_color)
+            .border_color(border)
             .bg(session_bg)
             .child(
                 v_flex()
@@ -1485,526 +1086,99 @@ impl SshTunnelApp {
                                         div()
                                             .size(px(8.0))
                                             .rounded_full()
-                                            .bg(success_color)
+                                            .bg(success),
                                     )
                                     .child(
-                                        Label::new(format!("{} ({})", t!("app.active_sessions"), session_count))
-                                            .text_size(rems(0.9))
-                                            .text_color(session_title_color)
-                                    )
-                            )
+                                        Label::new(format!(
+                                            "{} ({})",
+                                            t!("app.active_sessions"),
+                                            session_count
+                                        ))
+                                        .text_size(rems(0.9))
+                                        .text_color(session_title_color),
+                                    ),
+                            ),
                     )
-                    .children(
-                        sessions.into_iter().enumerate().map(|(idx, session)| {
-                            let session_id = session.id;
-                            let app_state = self.app_state.clone();
-                            let duration = chrono::Utc::now().signed_duration_since(session.started_at);
-                            let duration_str = Self::format_duration(duration);
-                            // Memory intentionally leaked for GPUI element ID stability across renders
-                            let btn_id: &'static str = Box::leak(format!("disconnect_{}", idx).into_boxed_str());
+                    .children(sessions.into_iter().enumerate().map(|(idx, session)| {
+                        let session_id = session.id;
+                        let app_state = self.app_state.clone();
+                        let duration =
+                            chrono::Utc::now().signed_duration_since(session.started_at);
+                        let duration_str = Self::format_duration(duration);
+                        // Memory intentionally leaked for GPUI element ID stability across renders
+                        let btn_id: &'static str =
+                            Box::leak(format!("disconnect_{}", idx).into_boxed_str());
 
-                            h_flex()
-                                .px_3()
-                                .py_2()
-                                .bg(card_bg)
-                                .rounded_md()
-                                .border_1()
-                                .border_color(session_border)
-                                .items_center()
-                                .justify_between()
-                                .child(
-                                    v_flex()
-                                        .gap_0p5()
-                                        .child(
-                                            Label::new(session.connection_name.clone())
-                                                .text_size(rems(0.85))
-                                                .text_color(text_color)
-                                        )
-                                        .child(
-                                            h_flex()
-                                                .gap_3()
-                                                .child(
-                                                    div()
-                                                        .text_xs()
-                                                        .text_color(muted_color)
-                                                        .child(t!("session.duration", "duration" => duration_str.as_str()).to_string())
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_xs()
-                                                        .text_color(muted_color)
-                                                        .child(t!("session.traffic",
-                                                            sent = Self::format_bytes(session.bytes_sent),
-                                                            received = Self::format_bytes(session.bytes_received)
-                                                        ).to_string())
-                                                )
-                                        )
-                                )
-                                .child(
-                                    Button::new(btn_id)
-                                        .danger()
-                                        .compact()
-                                        .label(t!("actions.disconnect").to_string())
-                                        .on_click(move |_, _, _| {
-                                            let app_state = app_state.clone();
-                                            tokio::spawn(async move {
-                                                if let Err(e) = app_state.disconnect_session(session_id).await {
-                                                    tracing::error!("Failed to disconnect: {}", e);
-                                                } else {
-                                                    tracing::info!("Session {} disconnected", session_id);
-                                                }
-                                            });
-                                        })
-                                )
-                        })
-                    )
-            )
-    }
-
-    /// Render left panel with connection list (sidebar)
-    fn render_left_panel(&self, cx: &mut Context<Self>) -> Div {
-        use button::Button;
-        use label::Label;
-
-        // Get theme colors
-        let theme = cx.theme();
-        let is_dark = theme.mode.is_dark();
-        let panel_bg = theme.sidebar;
-        let border_color = theme.border;
-        let text_color = theme.foreground;
-        let muted_color = theme.muted_foreground;
-        let card_bg = theme.background;
-
-        // Semantic colors for connection states
-        let connected_bg = if is_dark {
-            gpui::hsla(142.0 / 360.0, 0.40, 0.15, 1.0)
-        } else {
-            gpui::hsla(145.0 / 360.0, 0.80, 0.96, 1.0)
-        };
-        let connected_border = gpui::hsla(142.0 / 360.0, 0.71, 0.45, 1.0);
-        let connected_text = if is_dark {
-            gpui::hsla(142.0 / 360.0, 0.70, 0.70, 1.0)
-        } else {
-            gpui::hsla(144.0 / 360.0, 0.75, 0.20, 1.0)
-        };
-        let selected_bg = if is_dark {
-            gpui::hsla(217.0 / 360.0, 0.40, 0.20, 1.0)
-        } else {
-            gpui::hsla(219.0 / 360.0, 1.0, 0.95, 1.0)
-        };
-        let selected_border = if is_dark {
-            gpui::hsla(217.0 / 360.0, 0.70, 0.50, 1.0)
-        } else {
-            gpui::hsla(217.0 / 360.0, 0.91, 0.78, 1.0)
-        };
-        let selected_text = if is_dark {
-            gpui::hsla(217.0 / 360.0, 0.80, 0.75, 1.0)
-        } else {
-            gpui::hsla(224.0 / 360.0, 0.76, 0.40, 1.0)
-        };
-        let success_color = gpui::hsla(142.0 / 360.0, 0.71, 0.45, 1.0);
-        let inactive_dot = if is_dark {
-            gpui::hsla(0.0, 0.0, 0.40, 1.0)
-        } else {
-            gpui::hsla(0.0, 0.0, 0.83, 1.0)
-        };
-        let danger_bg = if is_dark {
-            gpui::hsla(0.0, 0.40, 0.20, 1.0)
-        } else {
-            gpui::hsla(0.0, 0.86, 0.97, 1.0)
-        };
-        let danger_border = if is_dark {
-            gpui::hsla(0.0, 0.70, 0.50, 1.0)
-        } else {
-            gpui::hsla(0.0, 0.92, 0.87, 1.0)
-        };
-        let danger_text = if is_dark {
-            gpui::hsla(0.0, 0.75, 0.70, 1.0)
-        } else {
-            gpui::hsla(0.0, 0.70, 0.35, 1.0)
-        };
-
-        // Get filter text and connections
-        let filter_text = if let Ok(ui_state) = self.app_state.ui_state.try_read() {
-            ui_state.filter_text.clone()
-        } else {
-            String::new()
-        };
-
-        let all_connections = if let Ok(conns) = self.app_state.connections.try_read() {
-            conns.clone()
-        } else {
-            vec![]
-        };
-
-        // Get active sessions to show connection status
-        let active_connection_ids: Vec<uuid::Uuid> =
-            if let Ok(sessions) = self.app_state.sessions.try_read() {
-                sessions.iter().map(|s| s.connection_id).collect()
-            } else {
-                vec![]
-            };
-
-        // Get confirm delete state
-        let confirm_delete_id = if let Ok(ui_state) = self.app_state.ui_state.try_read() {
-            ui_state.confirm_delete_id
-        } else {
-            None
-        };
-
-        // Filter connections based on search
-        let connections: Vec<_> = if filter_text.is_empty() {
-            all_connections.clone()
-        } else {
-            let filter_lower = filter_text.to_lowercase();
-            all_connections
-                .iter()
-                .filter(|c| {
-                    c.name.to_lowercase().contains(&filter_lower)
-                        || c.host.to_lowercase().contains(&filter_lower)
-                        || c.username.to_lowercase().contains(&filter_lower)
-                })
-                .cloned()
-                .collect()
-        };
-
-        let selected_id = if let Ok(state) = self.app_state.selected_connection_id.try_read() {
-            *state
-        } else {
-            None
-        };
-
-        v_flex()
-            .w(px(280.0))
-            .h_full()
-            .bg(panel_bg)
-            .border_r_1()
-            .border_color(border_color)
-            // Header
-            .child(
-                v_flex()
-                    .flex_shrink_0()
-                    .p_4()
-                    .gap_3()
-                    .border_b_1()
-                    .border_color(border_color)
-                    .child(
                         h_flex()
+                            .px_3()
+                            .py_2()
+                            .bg(card_bg)
+                            .rounded_lg()
+                            .border_1()
+                            .border_color(session_border)
                             .items_center()
                             .justify_between()
                             .child(
-                                Label::new(t!("connection.connections").to_string())
-                                    .text_size(rems(0.95))
-                                    .text_color(text_color)
+                                v_flex()
+                                    .gap_0p5()
+                                    .child(
+                                        Label::new(session.connection_name.clone())
+                                            .text_size(rems(0.85))
+                                            .text_color(text),
+                                    )
+                                    .child(
+                                        h_flex()
+                                            .gap_3()
+                                            .child(
+                                                div().text_xs().text_color(muted).child(
+                                                    t!("session.duration", "duration" => duration_str.as_str())
+                                                        .to_string(),
+                                                ),
+                                            )
+                                            .child(
+                                                div().text_xs().text_color(muted).child(
+                                                    t!("session.traffic",
+                                                        sent = Self::format_bytes(session.bytes_sent),
+                                                        received = Self::format_bytes(session.bytes_received)
+                                                    )
+                                                    .to_string(),
+                                                ),
+                                            ),
+                                    ),
                             )
                             .child(
-                                div()
-                                    .px_2()
-                                    .py(px(2.0))
-                                    .bg(theme.muted.opacity(0.5))
-                                    .rounded(px(4.0))
-                                    .text_xs()
-                                    .text_color(muted_color)
-                                    .child(format!("{}", all_connections.len()))
+                                Button::new(btn_id)
+                                    .danger()
+                                    .compact()
+                                    .label(t!("actions.disconnect").to_string())
+                                    .on_click(move |_, _, _| {
+                                        let app_state = app_state.clone();
+                                        tokio::spawn(async move {
+                                            if let Err(e) =
+                                                app_state.disconnect_session(session_id).await
+                                            {
+                                                tracing::error!(
+                                                    "Failed to disconnect: {}",
+                                                    e
+                                                );
+                                            } else {
+                                                tracing::info!(
+                                                    "Session {} disconnected",
+                                                    session_id
+                                                );
+                                            }
+                                        });
+                                    }),
                             )
-                    )
-                    .child(
-                        Input::new(&self.search_input)
-                            .cleanable(true)
-                    )
-            )
-            // Connection list
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scrollbar()
-                    .child(
-                        v_flex()
-                            .px_4()
-                            .py_2()
-                            .gap_2()
-                            .when(connections.is_empty(), |this| {
-                                this.child(
-                                    v_flex()
-                                        .p_4()
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .text_color(muted_color)
-                                                .text_center()
-                                                .child(if filter_text.is_empty() {
-                                                    t!("connection.no_connections").to_string()
-                                                } else {
-                                                    t!("connection.no_matching").to_string()
-                                                })
-                                        )
-                                        .when(filter_text.is_empty(), |this| {
-                                            this.child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(muted_color)
-                                                    .text_center()
-                                                    .mt_2()
-                                                    .child(t!("connection.click_new").to_string())
-                                            )
-                                        })
-                                )
-                            })
-                            .children(
-                                connections.iter().map(|conn| {
-                                    let is_selected = selected_id == Some(conn.id);
-                                    let conn_id = conn.id;
-                                    let app_state = self.app_state.clone();
-                                    let app_state_connect = self.app_state.clone();
-                                    let is_connected = active_connection_ids.contains(&conn.id);
-                                    let conn_clone = conn.clone();
-
-                                    let mode_icon = if conn.forwarding_configs.is_empty() {
-                                        ""
-                                    } else {
-                                        match &conn.forwarding_configs[0] {
-                                            ssh_tunnel_manager::models::forwarding::ForwardingConfig::Local(_) => "📥",
-                                            ssh_tunnel_manager::models::forwarding::ForwardingConfig::Remote(_) => "📤",
-                                            ssh_tunnel_manager::models::forwarding::ForwardingConfig::Dynamic(_) => "🌐",
-                                        }
-                                    };
-
-                                    div()
-                                        .w_full()
-                                        .px_2()
-                                        .py_2()
-                                        .rounded_md()
-                                        .bg(if is_connected {
-                                            connected_bg
-                                        } else if is_selected {
-                                            selected_bg
-                                        } else {
-                                            card_bg
-                                        })
-                                        .border_1()
-                                        .border_color(if is_connected {
-                                            connected_border
-                                        } else if is_selected {
-                                            selected_border
-                                        } else {
-                                            border_color
-                                        })
-                                        .cursor_pointer()
-                                        .on_mouse_down(gpui::MouseButton::Left, move |_event, _window, _app| {
-                                            let app_state = app_state.clone();
-                                            // Use select_and_load_connection to load form data
-                                            tokio::spawn(async move {
-                                                app_state.select_and_load_connection(conn_id).await;
-                                            });
-                                        })
-                                        .child(
-                                            h_flex()
-                                                .w_full()
-                                                .items_center()
-                                                .gap_2()
-                                                // Status dot
-                                                .child(
-                                                    div()
-                                                        .flex_shrink_0()
-                                                        .size(px(8.0))
-                                                        .rounded_full()
-                                                        .bg(if is_connected { success_color } else { inactive_dot })
-                                                )
-                                                // Mode icon
-                                                .child(
-                                                    div()
-                                                        .flex_shrink_0()
-                                                        .text_sm()
-                                                        .child(if mode_icon.is_empty() { "🔗" } else { mode_icon })
-                                                )
-                                                // Connection info
-                                                .child(
-                                                    v_flex()
-                                                        .flex_1()
-                                                        .min_w_0()
-                                                        .overflow_hidden()
-                                                        .child(
-                                                            div()
-                                                                .text_sm()
-                                                                .font_weight(FontWeight::MEDIUM)
-                                                                .text_color(if is_connected {
-                                                                    connected_text
-                                                                } else if is_selected {
-                                                                    selected_text
-                                                                } else {
-                                                                    text_color
-                                                                })
-                                                                .overflow_hidden()
-                                                                .whitespace_nowrap()
-                                                                .child(conn.name.clone())
-                                                        )
-                                                        .child(
-                                                            div()
-                                                                .text_xs()
-                                                                .text_color(muted_color)
-                                                                .overflow_hidden()
-                                                                .whitespace_nowrap()
-                                                                .child(format!("{}@{}", conn.username, conn.host))
-                                                        )
-                                                )
-                                                // Quick connect button (only when not connected)
-                                                .when(!is_connected, |this| {
-                                                    // Memory intentionally leaked for GPUI element ID stability across renders
-                                                    let btn_id: &'static str = Box::leak(format!("qc_{}", conn_id).into_boxed_str());
-                                                    this.child(
-                                                        div()
-                                                            .id(btn_id)
-                                                            .cursor_pointer()
-                                                            .px_2()
-                                                            .py_1()
-                                                            .rounded_md()
-                                                            .bg(success_color)
-                                                            .text_xs()
-                                                            .text_color(gpui::hsla(0.0, 0.0, 1.0, 1.0))
-                                                            .on_mouse_down(gpui::MouseButton::Left, move |_event, _window, _app| {
-                                                                let app_state = app_state_connect.clone();
-                                                                let conn = conn_clone.clone();
-                                                                tokio::spawn(async move {
-                                                                    // Handle connection based on auth method
-                                                                    match &conn.auth_method {
-                                                                        AuthMethod::Password => {
-                                                                            app_state.show_password_input(conn.id).await;
-                                                                        }
-                                                                        AuthMethod::PublicKey { passphrase_required, .. } => {
-                                                                            if *passphrase_required {
-                                                                                app_state.show_password_input(conn.id).await;
-                                                                            } else {
-                                                                                let _ = app_state.connect_session(conn.id, None).await;
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                });
-                                                            })
-                                                            .child("▶")
-                                                    )
-                                                })
-                                        )
-                                })
-                            )
-                    )
-            )
-            // Delete confirmation dialog (shown when confirm_delete_id is set)
-            .when(confirm_delete_id.is_some(), |this| {
-                let app_state = self.app_state.clone();
-                let app_state_cancel = self.app_state.clone();
-                let conn_name = if let Some(id) = confirm_delete_id {
-                    all_connections.iter()
-                        .find(|c| c.id == id)
-                        .map(|c| c.name.clone())
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
-
-                this.child(
-                    div()
-                        .flex_shrink_0()
-                        .p_3()
-                        .bg(danger_bg)
-                        .border_t_1()
-                        .border_color(danger_border)
-                        .child(
-                            v_flex()
-                                .gap_2()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(danger_text)
-                                        .child(t!("messages.delete_confirm_title", "name" => conn_name.as_str()).to_string())
-                                )
-                                .child(
-                                    h_flex()
-                                        .gap_2()
-                                        .child(
-                                            Button::new("confirm_delete")
-                                                .danger()
-                                                .compact()
-                                                .label(t!("actions.confirm_delete").to_string())
-                                                .on_click(move |_, _, _| {
-                                                    let app_state = app_state.clone();
-                                                    tokio::spawn(async move {
-                                                        if let Err(e) = app_state.confirm_delete().await {
-                                                            tracing::error!("Failed to delete: {}", e);
-                                                        }
-                                                    });
-                                                })
-                                        )
-                                        .child(
-                                            Button::new("cancel_delete")
-                                                .compact()
-                                                .label(t!("actions.cancel").to_string())
-                                                .on_click(move |_, _, _| {
-                                                    let app_state = app_state_cancel.clone();
-                                                    tokio::spawn(async move {
-                                                        app_state.hide_delete_confirm().await;
-                                                    });
-                                                })
-                                        )
-                                )
-                        )
-                )
-            })
-            // Bottom action bar
-            .child(
-                h_flex()
-                    .flex_shrink_0()
-                    .gap_2()
-                    .h(px(56.0))  // Fixed height to match right panel
-                    .px_4()
-                    .items_center()
-                    .border_t_1()
-                    .border_color(border_color)
-                    .bg(card_bg)
-                    .child({
-                        let app_state = self.app_state.clone();
-                        Button::new("new_left")
-                            .success()
-                            .label(t!("actions.new").to_string())
-                            .on_click(move |_, _, _| {
-                                let app_state = app_state.clone();
-                                tokio::spawn(async move {
-                                    app_state.clear_selection_for_new().await;
-                                });
-                            })
-                    })
-                    .child({
-                        let app_state = self.app_state.clone();
-                        let selected_id = selected_id;
-                        Button::new("delete_left")
-                            .danger()
-                            .label(t!("actions.delete").to_string())
-                            .on_click(move |_, _, _| {
-                                if let Some(conn_id) = selected_id {
-                                    let app_state = app_state.clone();
-                                    tokio::spawn(async move {
-                                        // Show confirmation instead of direct delete
-                                        app_state.show_delete_confirm(conn_id).await;
-                                    });
-                                }
-                            })
-                    })
+                    })),
             )
     }
 
-    /// Render right panel with config details (main content area)
-    fn render_right_panel_new(&self, cx: &mut Context<Self>) -> Div {
-        use button::Button;
-        use label::Label;
+    // ── Right Panel — Detail Workbench ───────────────────────────────
 
-        // Get theme colors
-        let theme = cx.theme();
-        let is_dark = theme.mode.is_dark();
-        let bg_color = theme.background;
-        let card_bg = theme.background; // Use background for cards
-        let border_color = theme.border;
-        let text_color = theme.foreground;
-        let muted_color = theme.muted_foreground;
+    fn render_right_panel(&self, cx: &mut Context<Self>) -> Div {
+        let is_dark = cx.theme().mode.is_dark();
+        let page_bg = AppColors::page_bg(is_dark);
 
         // Get UI state
         let (form_data, editing_id, password_input_for, is_connecting, show_templates) =
@@ -2020,197 +1194,48 @@ impl SshTunnelApp {
                 (ConnectionFormData::default(), None, None, false, false)
             };
 
-        // Get active session count
-        let active_session_count = if let Ok(sessions) = self.app_state.sessions.try_read() {
-            sessions.len()
+        // Get active session for this connection
+        let is_this_connected = if let Some(eid) = editing_id {
+            if let Ok(sessions) = self.app_state.sessions.try_read() {
+                sessions.iter().any(|s| s.connection_id == eid)
+            } else {
+                false
+            }
         } else {
-            0
+            false
         };
 
         let is_editing = editing_id.is_some();
         let needs_password = password_input_for.is_some();
-        let has_active_sessions = active_session_count > 0;
 
         v_flex()
             .flex_1()
             .size_full()
             .overflow_hidden()
-            .bg(bg_color)
-            // Header bar (fixed height)
-            .child(
-                h_flex()
-                    .flex_shrink_0()
-                    .p_4()
-                    .bg(card_bg)
-                    .border_b_1()
-                    .border_color(border_color)
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        h_flex()
-                            .items_center()
-                            .gap_3()
-                            .child(
-                                div()
-                                    .size(px(10.0))
-                                    .rounded_full()
-                                    .bg(if is_editing { theme.primary } else { gpui::hsla(45.0 / 360.0, 0.93, 0.58, 1.0) })  // Yellow for new
-                            )
-                            .child(
-                                Label::new(
-                                    if form_data.name.is_empty() {
-                                        t!("app.new_connection").to_string()
-                                    } else {
-                                        form_data.name.clone()
-                                    }
-                                )
-                                .text_size(rems(1.1))
-                                .text_color(text_color)
-                            )
-                            .when(is_editing, |this| {
-                                this.child(
-                                    div()
-                                        .px_2()
-                                        .py(px(2.0))
-                                        .bg(theme.primary.opacity(0.15))
-                                        .rounded(px(4.0))
-                                        .text_xs()
-                                        .text_color(theme.primary)
-                                        .child(t!("connection.editing").to_string())
-                                )
-                            })
-                    )
-                    .child(
-                        h_flex()
-                            .gap_3()
-                            .items_center()
-                            // Template dropdown button (only for new connections)
-                            .when(!is_editing, |this| {
-                                let app_state = self.app_state.clone();
-                                this.child(
-                                    div()
-                                        .id("template_dropdown")
-                                        .cursor_pointer()
-                                        .px_2()
-                                        .py(px(2.0))
-                                        .bg(theme.muted.opacity(0.5))
-                                        .rounded(px(4.0))
-                                        .text_xs()
-                                        .text_color(muted_color)
-                                        .on_mouse_down(gpui::MouseButton::Left, move |_, _, _| {
-                                            let app_state = app_state.clone();
-                                            tokio::spawn(async move {
-                                                app_state.toggle_templates().await;
-                                            });
-                                        })
-                                        .child(t!("app.templates").to_string())
-                                )
-                            })
-                            // Status indicator
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py(px(2.0))
-                                    .bg(if is_connecting {
-                                        gpui::hsla(45.0 / 360.0, 0.93, 0.58, 0.15)  // Yellow
-                                    } else if has_active_sessions {
-                                        gpui::hsla(142.0 / 360.0, 0.71, 0.45, 0.15)  // Green
-                                    } else {
-                                        theme.muted.opacity(0.5)
-                                    })
-                                    .rounded(px(4.0))
-                                    .text_xs()
-                                    .text_color(if is_connecting {
-                                        gpui::hsla(45.0 / 360.0, 0.93, 0.45, 1.0)  // Yellow text
-                                    } else if has_active_sessions {
-                                        gpui::hsla(142.0 / 360.0, 0.71, 0.40, 1.0)  // Green text
-                                    } else {
-                                        muted_color
-                                    })
-                                    .child(if is_connecting {
-                                        t!("actions.connecting").to_string()
-                                    } else if has_active_sessions {
-                                        t!("status.active", "count" => active_session_count).to_string()
-                                    } else {
-                                        t!("connection.not_connected").to_string()
-                                    })
-                            )
-                    )
-            )
+            .bg(page_bg)
+            // ── Fixed header (delegated to component) ──
+            .child(render_connection_header(
+                &self.app_state,
+                &form_data,
+                editing_id,
+                is_connecting,
+                is_this_connected,
+                is_dark,
+            ))
             // Password input section (shown when needed)
             .when(needs_password, |this| {
-                let app_state = self.app_state.clone();
-                let conn_id = password_input_for.unwrap();
-                let warning_bg = if is_dark { gpui::hsla(38.0 / 360.0, 0.40, 0.20, 1.0) } else { gpui::hsla(45.0 / 360.0, 0.93, 0.89, 1.0) };
-                let warning_border = gpui::hsla(45.0 / 360.0, 0.90, 0.58, 1.0);
-                let warning_text = if is_dark { gpui::hsla(38.0 / 360.0, 0.80, 0.70, 1.0) } else { gpui::hsla(28.0 / 360.0, 0.80, 0.31, 1.0) };
-                this.child(
-                    div()
-                        .flex_shrink_0()
-                        .p_4()
-                        .bg(warning_bg)
-                        .border_b_1()
-                        .border_color(warning_border)
-                        .child(
-                            v_flex()
-                                .gap_3()
-                                .child(
-                                    Label::new(format!("🔑 {}", t!("connection.enter_password")))
-                                        .text_size(rems(0.95))
-                                        .text_color(warning_text)
-                                )
-                                .child(
-                                    h_flex()
-                                        .gap_3()
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .child(Input::new(&self.password_input).cleanable(true))
-                                        )
-                                        .child({
-                                            let app_state_submit = app_state.clone();
-                                            Button::new("submit_password")
-                                                .success()
-                                                .label(t!("actions.connect").to_string())
-                                                .on_click(move |_, _, _| {
-                                                    let app_state = app_state_submit.clone();
-                                                    tokio::spawn(async move {
-                                                        let password = app_state.get_password_value().await;
-                                                        app_state.hide_password_input().await;
-                                                        match app_state.connect_session(conn_id, Some(password)).await {
-                                                            Ok(_) => {
-                                                                app_state.show_success(t!("messages.connection_success").to_string()).await;
-                                                            }
-                                                            Err(e) => {
-                                                                app_state.show_error(
-                                                                    t!("messages.connection_failed", "reason" => e.to_string()).to_string(),
-                                                                    ErrorSeverity::Error
-                                                                ).await;
-                                                            }
-                                                        }
-                                                    });
-                                                })
-                                        })
-                                        .child({
-                                            let app_state_cancel = app_state.clone();
-                                            Button::new("cancel_password")
-                                                .label(t!("actions.cancel").to_string())
-                                                .on_click(move |_, _, _| {
-                                                    let app_state = app_state_cancel.clone();
-                                                    tokio::spawn(async move {
-                                                        app_state.hide_password_input().await;
-                                                    });
-                                                })
-                                        })
-                                )
-                        )
-                )
+                this.child(render_password_section(
+                    &self.app_state,
+                    &self.password_input,
+                    password_input_for.unwrap(),
+                    is_dark,
+                ))
             })
-            // Template selector panel (shown when toggle is active)
+            // Template selector panel
             .when(show_templates && !is_editing, |this| {
                 this.child(self.render_template_selector(cx))
             })
-            // Scrollable config form (takes remaining space)
+            // ── Scrollable form area with 4 cards ──
             .child(
                 div()
                     .flex_1()
@@ -2218,125 +1243,26 @@ impl SshTunnelApp {
                     .overflow_y_scrollbar()
                     .child(
                         v_flex()
-                            .gap_5()
+                            .gap_4()
                             .w_full()
                             .p_4()
                             .pb_8()
-                            .child(self.render_host_info(cx))
-                            .child(self.render_authentication(cx))
-                            .child(self.render_tunnel_mode(cx))
-                            .child(self.render_forward_rules(cx))
-                            .child(self.render_options(cx))
-                    )
+                            .child(self.render_connection_card(cx))
+                            .child(self.render_authentication_card(cx))
+                            .child(render_tunnel_card(
+                                &self.app_state,
+                                &form_data,
+                                &self.local_port_input,
+                                &self.remote_host_input,
+                                &self.remote_port_input,
+                                &self.bind_address_input,
+                                is_dark,
+                            ))
+                            .child(self.render_advanced_card(cx)),
+                    ),
             )
             // Active sessions panel
             .child(self.render_sessions_panel(cx))
-            // Action bar (fixed height)
-            .child(
-                h_flex()
-                    .flex_shrink_0()
-                    .h(px(56.0))  // Fixed height to match left panel
-                    .px_4()
-                    .bg(card_bg)
-                    .border_t_1()
-                    .border_color(border_color)
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        h_flex()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(muted_color)
-                                    .child("💡")
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(muted_color)
-                                    .child(if is_editing {
-                                        t!("connection.update_hint").to_string()
-                                    } else {
-                                        t!("connection.fill_details").to_string()
-                                    })
-                            )
-                    )
-                    .child(
-                        h_flex()
-                            .gap_3()
-                            // Save button
-                            .child({
-                                let app_state = self.app_state.clone();
-                                Button::new("save_btn")
-                                    .primary()
-                                    .label(t!("actions.save").to_string())
-                                    .on_click(move |_, _, _| {
-                                        let app_state = app_state.clone();
-                                        tokio::spawn(async move {
-                                            match app_state.save_connection_from_form().await {
-                                                Ok(connection_id) => {
-                                                    tracing::info!("Connection saved: {}", connection_id);
-                                                    app_state.show_success(t!("messages.connection_saved").to_string()).await;
-                                                    // Select the saved connection
-                                                    app_state.select_and_load_connection(connection_id).await;
-                                                }
-                                                Err(e) => {
-                                                    tracing::error!("Failed to save connection: {}", e);
-                                                    app_state.show_error(
-                                                        t!("messages.save_failed", "reason" => e.to_string()).to_string(),
-                                                        ErrorSeverity::Error
-                                                    ).await;
-                                                }
-                                            }
-                                        });
-                                    })
-                            })
-                            // Connect button (only for saved connections)
-                            .when(is_editing, |this| {
-                                let app_state = self.app_state.clone();
-                                let conn_id = editing_id.unwrap();
-                                this.child(
-                                    Button::new("connect_btn")
-                                        .success()
-                                        .label(t!("actions.connect").to_string())
-                                        .on_click(move |_, _, _| {
-                                            let app_state = app_state.clone();
-                                            tokio::spawn(async move {
-                                                // Check if password auth is needed
-                                                if let Some(conn) = app_state.get_connection(conn_id).await {
-                                                    match &conn.auth_method {
-                                                        AuthMethod::Password => {
-                                                            // Show password input
-                                                            app_state.show_password_input(conn_id).await;
-                                                        }
-                                                        AuthMethod::PublicKey { passphrase_required, .. } => {
-                                                            if *passphrase_required {
-                                                                app_state.show_password_input(conn_id).await;
-                                                            } else {
-                                                                // Connect without password
-                                                                match app_state.connect_session(conn_id, None).await {
-                                                                    Ok(_) => {
-                                                                        app_state.show_success(t!("messages.connection_success").to_string()).await;
-                                                                    }
-                                                                    Err(e) => {
-                                                                        app_state.show_error(
-                                                                            t!("messages.connection_failed", "reason" => e.to_string()).to_string(),
-                                                                            ErrorSeverity::Error
-                                                                        ).await;
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            });
-                                        })
-                                )
-                            })
-                    )
-            )
     }
 }
 
@@ -2345,21 +1271,21 @@ impl Render for SshTunnelApp {
         // Sync form_data to inputs on every render
         self.sync_form_to_inputs(window, cx);
 
-        // Get theme colors
-        let bg_color = cx.theme().background;
+        let is_dark = cx.theme().mode.is_dark();
+        let page_bg = AppColors::page_bg(is_dark);
+        let border = AppColors::border_color(is_dark);
 
         v_flex()
             .size_full()
             .overflow_hidden()
-            .bg(bg_color)
+            .bg(page_bg)
+            // Header (fixed, delegated to component)
             .child(
-                // Header with title and window controls (fixed height)
                 div()
                     .flex_shrink_0()
-                    .border_b_1()
-                    .border_color(cx.theme().border)
-                    .child(self.render_header(cx)),
+                    .child(render_top_bar(&self.app_state, is_dark)),
             )
+            // Notifications
             .when_some(self.render_notifications(cx), |this, notification| {
                 this.child(
                     div()
@@ -2368,24 +1294,22 @@ impl Render for SshTunnelApp {
                         .pt_3()
                         .pb_3()
                         .border_b_1()
-                        .border_color(cx.theme().border)
+                        .border_color(border)
                         .child(notification),
                 )
             })
+            // Main split layout
             .child(
-                // Main split layout (takes remaining height)
                 h_flex()
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(
-                        // Left panel: Connection list (fixed width)
-                        self.render_left_panel(cx),
-                    )
-                    .child(
-                        // Right panel: Config details (flex)
-                        self.render_right_panel_new(cx),
-                    ),
+                    .child(render_connection_sidebar(
+                        &self.app_state,
+                        &self.search_input,
+                        is_dark,
+                    ))
+                    .child(self.render_right_panel(cx)),
             )
     }
 }

@@ -17,6 +17,9 @@ connection:
   name: 名称
   host: 主机
   port: 端口
+  ssh_port: SSH 端口
+  local_port: 本地端口
+  remote_port: 远程端口
   username: 用户名
   auth_method: 认证方式
   password: 密码

@@ -17,6 +17,9 @@ connection:
   name: Name
   host: Host
   port: Port
+  ssh_port: SSH Port
+  local_port: Local Port
+  remote_port: Remote Port
   username: Username
   auth_method: Authentication Method
   password: Password
