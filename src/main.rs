@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, feature = "gui"), windows_subsystem = "windows")]
+
 // Load i18n translations
 rust_i18n::i18n!("locales", fallback = "en");
 
@@ -26,6 +28,8 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Current language: {}", i18n::current_language());
 
     let cli = Cli::parse();
+    let start_gui = cli.gui
+        || (cfg!(all(windows, feature = "gui")) && cli.command.is_none() && !cli.interactive);
 
     // Helper: find a connection by name (or UUID prefix)
     let find_connection =
@@ -41,7 +45,7 @@ async fn main() -> anyhow::Result<()> {
             None
         };
 
-    if cli.gui {
+    if start_gui {
         #[cfg(feature = "gui")]
         {
             // Run GUI mode (requires Rust 1.87+ and Xcode Command Line Tools)

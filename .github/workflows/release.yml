@@ -56,19 +56,97 @@ jobs:
         with:
           name: ssh-tunnel-manager-macos-cli
           path: target/release/ssh-tunnel-manager-v*-macos-universal.tar.gz
+          if-no-files-found: error
 
       - name: Upload GUI artifact
         uses: actions/upload-artifact@v4
         with:
           name: ssh-tunnel-manager-macos-app
           path: target/release/SSH-Tunnel-Manager-v*-macos.zip
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-
+
+      - name: Get version
+        id: version
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF -replace '^refs/tags/v', ''
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (Test-Path $iscc) {
+            Write-Host "Inno Setup already installed: $iscc"
+            exit 0
+          }
+          $installer = Join-Path $env:TEMP "innosetup-installer.exe"
+          Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile $installer -UseBasicParsing
+          Start-Process -FilePath $installer -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-" -Wait
+          if (-not (Test-Path $iscc)) {
+            throw "Inno Setup installation failed"
+          }
+          Write-Host "Inno Setup installed: $iscc"
+
+      - name: Build and package
+        shell: pwsh
+        run: ./scripts/package-windows.ps1 -Archive
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-tunnel-manager-windows-portable
+          path: target/release/SSH-Tunnel-Manager-v*-windows-x64-portable.exe
+          if-no-files-found: error
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-tunnel-manager-windows-setup
+          path: target/release/SSH-Tunnel-Manager-v*-windows-x64-setup.exe
+          if-no-files-found: error
+
+  publish:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/release/ssh-tunnel-manager-v*-macos-universal.tar.gz
-            target/release/SSH-Tunnel-Manager-v*-macos.zip
+            dist/ssh-tunnel-manager-v*-macos-universal.tar.gz
+            dist/SSH-Tunnel-Manager-v*-macos.zip
+            dist/SSH-Tunnel-Manager-v*-windows-x64-portable.exe
+            dist/SSH-Tunnel-Manager-v*-windows-x64-setup.exe
           generate_release_notes: true
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
