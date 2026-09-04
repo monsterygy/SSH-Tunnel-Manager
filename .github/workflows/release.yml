@@ -4,18 +4,33 @@ on:
   push:
     tags:
       - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build, e.g. v1.0.0'
+        required: false
+        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
   build-macos:
+    if: github.event_name != 'release' || github.event.release.author.login != 'github-actions[bot]'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -66,10 +81,13 @@ jobs:
           if-no-files-found: error
 
   build-windows:
+    if: github.event_name != 'release' || github.event.release.author.login != 'github-actions[bot]'
     runs-on: windows-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -129,6 +147,7 @@ jobs:
           if-no-files-found: error
 
   publish:
+    if: github.event_name != 'release' || github.event.release.author.login != 'github-actions[bot]'
     needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
     steps:
@@ -141,6 +160,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.release.tag_name || github.event.inputs.tag || github.ref_name }}
           files: |
             dist/ssh-tunnel-manager-v*-macos-universal.tar.gz
             dist/SSH-Tunnel-Manager-v*-macos.zip
