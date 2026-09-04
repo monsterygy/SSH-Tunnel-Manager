@@ -82,7 +82,7 @@ jobs:
 
   build-windows:
     if: github.event_name != 'release' || github.event.release.author.login != 'github-actions[bot]'
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
