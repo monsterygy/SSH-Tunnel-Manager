@@ -84,10 +84,15 @@ jobs:
     if: github.event_name != 'release' || github.event.release.author.login != 'github-actions[bot]'
     runs-on: windows-2022
     timeout-minutes: 120
+    env:
+      AWS_LC_SYS_PREBUILT_NASM: 1
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install NASM
+        uses: ilammy/setup-nasm@v1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
